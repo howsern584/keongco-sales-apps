@@ -41,6 +41,22 @@ Then open **http://127.0.0.1:8000** in your browser. You should see a small
 "status: ok" message. A file called `keongco.db` will appear — that's your
 local database with all the tables created.
 
+## Add sample data (optional but recommended)
+
+To fill the database with a few demo customers, products, and lots so you can
+click around, run this once (with the virtual environment active):
+
+```powershell
+python -m app.seed
+```
+
+## Try the app without writing code
+
+While the server is running, open **http://127.0.0.1:8000/docs** in your
+browser. FastAPI builds an interactive page listing every endpoint — you can
+search customers, browse products, create an order, add lines, and submit it,
+all by filling in forms and clicking "Execute". Great for testing by hand.
+
 ## Database note
 
 Phase 1 & 2 use **SQLite** (a single local file, zero install).

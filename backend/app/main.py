@@ -19,11 +19,16 @@ from fastapi import FastAPI
 
 from .database import Base, engine
 from . import models  # noqa: F401  (importing registers all the tables)
+from .routers import catalog, orders
 
 # Create the tables in the database if they aren't there already.
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Keongco Sales Order-Entry App", version="0.1.0 (Phase 1)")
+app = FastAPI(title="Keongco Sales Order-Entry App", version="0.2.0 (Phase 2)")
+
+# Connect the groups of endpoints (catalog lookups + order entry) to the app.
+app.include_router(catalog.router)
+app.include_router(orders.router)
 
 
 @app.get("/")
@@ -31,6 +36,6 @@ def health_check():
     """A simple page to confirm the backend is alive."""
     return {
         "app": "Keongco Sales Order-Entry App",
-        "phase": "Phase 1 — foundation only",
+        "phase": "Phase 2 — salesperson order entry",
         "status": "ok",
     }
