@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment variables (never commit secrets)
+.env
+
+# Local database file (SQLite)
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploaded photos (stored on server, not in git)
+uploads/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
