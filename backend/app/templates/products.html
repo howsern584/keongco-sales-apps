@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "products" %}
+
+{% block content %}
+<h2 class="text-xl font-bold mb-4" data-i18n="products_title">Products</h2>
+
+<input type="text" id="filter" oninput="filterProducts(this.value)"
+       class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base mb-4 focus:outline-none focus:ring-2 focus:ring-brand"
+       data-i18n="search_product" placeholder="Search product…"/>
+
+<div id="product-list" class="space-y-3">
+  {% for p in products %}
+  <div class="product-card bg-white rounded-xl shadow-sm border border-gray-100 p-4"
+       data-name="{{ p.description | lower }}">
+    <div class="flex items-start justify-between mb-1">
+      <span class="font-semibold text-gray-800">{{ p.description }}</span>
+      {% if p.status == 'on_hold' %}
+      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700"
+            data-i18n="on_hold_badge">On Hold</span>
+      {% endif %}
+    </div>
+    <div class="text-sm text-gray-500 flex gap-4 mb-2">
+      <span>{{ p.unit.value }}</span>
+      <span>RM {{ "%.2f" | format(p.base_price) }}</span>
+      {% if p.price_floor %}
+      <span class="text-xs text-gray-400">
+        RM {{ "%.2f" | format(p.price_floor) }} – {{ "%.2f" | format(p.price_ceiling) }}
+      </span>
+      {% endif %}
+    </div>
+
+    <!-- Allocation bar (salesperson only) -->
+    {% if role == 'salesperson' %}
+    {% set alloc = allocations.get(p.id) %}
+    {% if alloc %}
+    <div class="mb-2">
+      <div class="flex justify-between text-xs text-gray-500 mb-0.5">
+        <span data-i18n="alloc_remaining">Remaining</span>
+        <span class="font-medium text-brand">{{ alloc.remaining_qty }} / {{ alloc.allocated_qty }} {{ p.unit.value }}</span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-1.5">
+        {% set pct = (alloc.remaining_qty / alloc.allocated_qty * 100) if alloc.allocated_qty > 0 else 0 %}
+        <div class="bg-brand rounded-full h-1.5" style="width: {{ pct | int }}%"></div>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <!-- Lots & photos -->
+    {% set lot_list = lots.get(p.id, []) %}
+    {% if lot_list %}
+    <div class="space-y-1">
+      {% for lot in lot_list %}
+      <div class="flex items-center justify-between text-xs bg-gray-50 rounded-lg px-3 py-1.5">
+        <span class="text-gray-600">Lot: <span class="font-medium">{{ lot.lot_code }}</span>
+          <span class="text-gray-400 ml-1">{{ lot.received_date | string | truncate(10, true, '') }}</span>
+        </span>
+        <a href="/app/lots/{{ lot.id }}/photos"
+           class="text-brand underline" data-i18n="view_photos">View Photos</a>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterProducts(q) {
+  const term = q.toLowerCase();
+  document.querySelectorAll('.product-card').forEach(card => {
+    card.style.display = card.dataset.name.includes(term) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

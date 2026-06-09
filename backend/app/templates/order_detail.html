@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "orders" %}
+
+{% block content %}
+<div class="flex items-center gap-3 mb-4">
+  <a href="/app/orders" class="text-gray-500 hover:text-brand">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+    </svg>
+  </a>
+  <h2 class="text-xl font-bold">
+    <span data-i18n="order_id">Order #</span>{{ order.id }}
+  </h2>
+  <span class="ml-auto text-xs font-medium px-3 py-1 rounded-full badge-{{ order.status }}">
+    {{ order.status | replace('_',' ') | title }}
+  </span>
+</div>
+
+<!-- Summary card -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4 space-y-2 text-sm">
+  <div class="flex justify-between">
+    <span class="text-gray-500" data-i18n="customer_label">Customer</span>
+    <span class="font-medium">{{ customer_name }}</span>
+  </div>
+  <div class="flex justify-between">
+    <span class="text-gray-500" data-i18n="salesperson_label">Salesperson</span>
+    <span class="font-medium">{{ salesperson_name }}</span>
+  </div>
+  <div class="flex justify-between">
+    <span class="text-gray-500">Date</span>
+    <span class="font-medium">{{ order.created_at | string | truncate(10, true, '') }}</span>
+  </div>
+  {% if order.approved_at %}
+  <div class="flex justify-between">
+    <span class="text-gray-500" data-i18n="approve_btn">Approved</span>
+    <span class="font-medium">{{ order.approved_at | string | truncate(10, true, '') }}</span>
+  </div>
+  {% endif %}
+  {% if order.sage_order_ref %}
+  <div class="flex justify-between">
+    <span class="text-gray-500">Sage Ref</span>
+    <span class="font-medium text-purple-700">{{ order.sage_order_ref }}</span>
+  </div>
+  {% endif %}
+</div>
+
+{% if order.reject_note %}
+<div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-sm text-red-700">
+  <span class="font-semibold" data-i18n="reject_note_label">Rejection Note</span>: {{ order.reject_note }}
+</div>
+{% endif %}
+
+<!-- Line items -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 mb-4">
+  {% for line in lines %}
+  <div class="px-4 py-3 flex justify-between items-center text-sm">
+    <div>
+      <div class="font-medium">{{ line.product_name }}</div>
+      <div class="text-gray-500 text-xs">
+        {{ line.quantity }} {{ line.unit }} × RM {{ "%.2f" | format(line.unit_price) }}
+        {% if line.lot_code %} · Lot: {{ line.lot_code }}{% endif %}
+      </div>
+    </div>
+    <div class="font-semibold text-brand">RM {{ "%.2f" | format(line.line_total) }}</div>
+  </div>
+  {% endfor %}
+  <div class="px-4 py-3 flex justify-between font-bold text-base">
+    <span data-i18n="total_label">Total</span>
+    <span class="text-brand">RM {{ "%.2f" | format(total) }}</span>
+  </div>
+</div>
+
+<!-- Admin actions (only shown to admin, only on submitted orders) -->
+{% if role == 'admin' and order.status == 'submitted' %}
+<div class="space-y-3">
+  <button onclick="approveOrder()"
+          class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition">
+    <span data-i18n="approve_btn">Approve</span>
+  </button>
+  <button onclick="showRejectForm()"
+          class="w-full border border-red-400 text-red-600 font-semibold py-3 rounded-xl hover:bg-red-50 transition">
+    <span data-i18n="reject_btn">Reject</span>
+  </button>
+
+  <!-- Reject form (hidden until button clicked) -->
+  <div id="reject-form" class="hidden bg-white rounded-xl border border-red-200 p-4 space-y-3">
+    <textarea id="reject-note" rows="3"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+              data-i18n="reject_note_ph" placeholder="Reason for rejection…"></textarea>
+    <div class="flex gap-2">
+      <button onclick="hideRejectForm()"
+              class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm"
+              data-i18n="btn_cancel">Cancel</button>
+      <button onclick="rejectOrder()"
+              class="flex-1 bg-red-500 text-white py-2 rounded-lg text-sm font-semibold"
+              data-i18n="btn_confirm">Confirm Reject</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Push to Sage (only for approved orders) -->
+{% if role == 'admin' and order.status == 'approved' %}
+<button onclick="pushToSage()"
+        class="w-full bg-purple-600 text-white font-semibold py-3 rounded-xl hover:bg-purple-700 transition">
+  <span data-i18n="push_sage_btn">Push to Sage</span>
+</button>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const ORDER_ID = {{ order.id }};
+const ADMIN_ID = {{ admin_id or 'null' }};
+
+async function approveOrder() {
+  if (!confirm(t('confirm_approve'))) return;
+  const r = await fetch(`/admin/orders/${ORDER_ID}/approve?admin_id=${ADMIN_ID}`, {method:'POST'});
+  if (r.ok) location.reload(); else alert((await r.json()).detail);
+}
+function showRejectForm()  { document.getElementById('reject-form').classList.remove('hidden'); }
+function hideRejectForm()  { document.getElementById('reject-form').classList.add('hidden'); }
+async function rejectOrder() {
+  const note = document.getElementById('reject-note').value.trim();
+  if (!note) { alert('Please enter a rejection reason.'); return; }
+  const r = await fetch(`/admin/orders/${ORDER_ID}/reject`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({note})
+  });
+  if (r.ok) location.reload(); else alert((await r.json()).detail);
+}
+async function pushToSage() {
+  if (!confirm(t('confirm_push'))) return;
+  const r = await fetch(`/admin/orders/${ORDER_ID}/push-to-sage?admin_id=${ADMIN_ID}`, {method:'POST'});
+  if (r.ok) location.reload(); else alert((await r.json()).detail);
+}
+</script>
+{% endblock %}

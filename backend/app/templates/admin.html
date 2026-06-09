@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "admin" %}
+
+{% block content %}
+<h2 class="text-xl font-bold mb-4" data-i18n="admin_pending">Pending Orders</h2>
+
+<!-- Tabs -->
+<div class="flex border-b border-gray-200 mb-4">
+  <button onclick="showTab('pending')" id="tab-pending"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-brand text-brand">
+    <span data-i18n="admin_pending">Pending</span>
+    {% if pending_orders %}
+    <span class="ml-1 bg-brand text-white text-xs rounded-full px-1.5 py-0.5">{{ pending_orders | length }}</span>
+    {% endif %}
+  </button>
+  <button onclick="showTab('all')" id="tab-all"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500">
+    <span data-i18n="admin_all">All Orders</span>
+  </button>
+  {% if stock_alerts %}
+  <button onclick="showTab('alerts')" id="tab-alerts"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500">
+    Alerts
+    <span class="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{{ stock_alerts | length }}</span>
+  </button>
+  {% endif %}
+</div>
+
+<!-- Pending orders tab -->
+<div id="pane-pending">
+  {% if pending_orders %}
+  <div class="space-y-3">
+    {% for order in pending_orders %}
+    <a href="/app/orders/{{ order.id }}"
+       class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
+      <div class="flex items-center justify-between mb-1">
+        <span class="font-semibold"># {{ order.id }} — {{ order.customer_name }}</span>
+        <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-submitted">Submitted</span>
+      </div>
+      <div class="text-sm text-gray-500 flex justify-between">
+        <span>{{ order.salesperson_name }}</span>
+        <span>RM {{ "%.2f" | format(order.total) }}</span>
+      </div>
+      <div class="text-xs text-gray-400 mt-1">{{ order.created_at[:10] }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="text-center text-gray-400 mt-16">
+    <svg class="w-14 h-14 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="text-sm">No pending orders — all clear!</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- All orders tab -->
+<div id="pane-all" class="hidden space-y-3">
+  {% for order in all_orders %}
+  <a href="/app/orders/{{ order.id }}"
+     class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
+    <div class="flex items-center justify-between mb-1">
+      <span class="font-semibold"># {{ order.id }} — {{ order.customer_name }}</span>
+      <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">
+        {{ order.status | replace('_',' ') | title }}
+      </span>
+    </div>
+    <div class="text-sm text-gray-500 flex justify-between">
+      <span>{{ order.salesperson_name }}</span>
+      <span>RM {{ "%.2f" | format(order.total) }}</span>
+    </div>
+    <div class="text-xs text-gray-400 mt-1">{{ order.created_at[:10] }}</div>
+  </a>
+  {% else %}
+  <p class="text-center text-gray-400 mt-8 text-sm">No orders yet.</p>
+  {% endfor %}
+</div>
+
+<!-- Alerts tab -->
+{% if stock_alerts %}
+<div id="pane-alerts" class="hidden space-y-3">
+  {% for alert in stock_alerts %}
+  <div class="bg-white rounded-xl border border-red-200 px-4 py-3">
+    <div class="flex justify-between items-start mb-1">
+      <span class="font-semibold text-red-700">{{ alert.salesperson_name }}</span>
+      <span class="text-xs text-gray-400">{{ alert.triggered_at[:10] }}</span>
+    </div>
+    <p class="text-sm text-gray-600">Hit limit for <span class="font-medium">{{ alert.product_name }}</span></p>
+    <button onclick="topUp({{ alert.salesperson_id }}, {{ alert.product_id }}, '{{ alert.product_name }}')"
+            class="mt-2 text-xs bg-brand text-white px-3 py-1 rounded-lg">
+      Top Up Allocation
+    </button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Top-up modal -->
+<div id="topup-modal" class="hidden fixed inset-0 bg-black/40 flex items-end z-50">
+  <div class="bg-white w-full max-w-lg mx-auto rounded-t-2xl p-5 space-y-4">
+    <h3 class="font-bold text-lg">Top Up Allocation</h3>
+    <p id="topup-desc" class="text-sm text-gray-600"></p>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1" data-i18n="alloc_limit">New Total Limit</label>
+      <input id="topup-qty" type="number" min="1" placeholder="e.g. 1000"
+             class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand"/>
+    </div>
+    <div class="flex gap-3">
+      <button onclick="closeTopUp()"
+              class="flex-1 border border-gray-300 text-gray-600 py-3 rounded-lg" data-i18n="btn_cancel">Cancel</button>
+      <button onclick="submitTopUp()"
+              class="flex-1 bg-brand text-white font-semibold py-3 rounded-lg" data-i18n="btn_confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let topUpTarget = null;
+
+function showTab(name) {
+  ['pending','all','alerts'].forEach(t => {
+    const pane = document.getElementById(`pane-${t}`);
+    const tab  = document.getElementById(`tab-${t}`);
+    if (!pane || !tab) return;
+    if (t === name) {
+      pane.classList.remove('hidden');
+      tab.classList.add('border-brand','text-brand');
+      tab.classList.remove('border-transparent','text-gray-500');
+    } else {
+      pane.classList.add('hidden');
+      tab.classList.remove('border-brand','text-brand');
+      tab.classList.add('border-transparent','text-gray-500');
+    }
+  });
+}
+
+function topUp(salespersonId, productId, productName) {
+  topUpTarget = { salespersonId, productId };
+  document.getElementById('topup-desc').textContent =
+    `Set new total allocation for "${productName}"`;
+  document.getElementById('topup-qty').value = '';
+  document.getElementById('topup-modal').classList.remove('hidden');
+}
+function closeTopUp() {
+  document.getElementById('topup-modal').classList.add('hidden');
+  topUpTarget = null;
+}
+async function submitTopUp() {
+  const qty = parseInt(document.getElementById('topup-qty').value);
+  if (!qty || qty < 1) { alert('Please enter a valid quantity.'); return; }
+  const r = await fetch('/admin/allocations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ salesperson_id: topUpTarget.salespersonId,
+                           product_id: topUpTarget.productId,
+                           allocated_qty: qty })
+  });
+  if (r.ok) { closeTopUp(); location.reload(); }
+  else alert((await r.json()).detail);
+}
+</script>
+{% endblock %}
