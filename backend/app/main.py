@@ -19,7 +19,7 @@ from fastapi import FastAPI
 
 from .database import Base, engine
 from . import models  # noqa: F401  (importing registers all the tables)
-from .routers import catalog, orders
+from .routers import catalog, orders, allocations
 
 # Create the tables in the database if they aren't there already.
 Base.metadata.create_all(bind=engine)
@@ -29,6 +29,7 @@ app = FastAPI(title="Keongco Sales Order-Entry App", version="0.2.0 (Phase 2)")
 # Connect the groups of endpoints (catalog lookups + order entry) to the app.
 app.include_router(catalog.router)
 app.include_router(orders.router)
+app.include_router(allocations.router)
 
 
 @app.get("/")

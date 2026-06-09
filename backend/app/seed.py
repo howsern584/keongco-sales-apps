@@ -15,7 +15,7 @@ from datetime import datetime
 from .database import SessionLocal, Base, engine
 from . import models
 from .models import (
-    User, UserRole, Customer, Product, Lot,
+    User, UserRole, Customer, Product, Lot, Allocation, FcfsPool,
     ProductUnit, ProductStatus, AllocationMode,
 )
 
@@ -87,11 +87,38 @@ def seed():
                 received_date=datetime(2026, 6, 8), notes="Limited stock"),
         ]
         db.add_all(lots)
+        db.flush()  # assign ids to users/lots for the rows below
+
+        # Find the two salespeople by login so we can allocate stock to them.
+        ali = next(u for u in users if u.login == "ali")
+        siti = next(u for u in users if u.login == "siti")
+        apple, potato, durian = products[0], products[1], products[2]
+
+        # --- Per-salesperson allocations (different scale per person) ---
+        # Apple (manual_topup) and Potato (shared_reset) are per-person limits.
+        allocations = [
+            Allocation(salesperson_id=ali.id, product_id=apple.id,
+                       allocated_qty=100, used_qty=0, remaining_qty=100,
+                       allocation_mode=AllocationMode.manual_topup),
+            Allocation(salesperson_id=ali.id, product_id=potato.id,
+                       allocated_qty=2000, used_qty=0, remaining_qty=2000,
+                       allocation_mode=AllocationMode.shared_reset),
+            Allocation(salesperson_id=siti.id, product_id=potato.id,
+                       allocated_qty=500, used_qty=0, remaining_qty=500,
+                       allocation_mode=AllocationMode.shared_reset),
+        ]
+        db.add_all(allocations)
+
+        # --- FCFS shared pool for Durian (first to submit reserves it) ---
+        durian_pool = FcfsPool(product_id=durian.id, lot_id=lots[2].id,
+                               total_qty=300, reserved_qty=0, available_qty=300)
+        db.add(durian_pool)
 
         db.commit()
         print("Seed complete:")
         print(f"  {len(users)} users, {len(customers)} customers, "
               f"{len(products)} products, {len(lots)} lots.")
+        print(f"  {len(allocations)} allocations, 1 FCFS pool (durian=300).")
     finally:
         db.close()
 

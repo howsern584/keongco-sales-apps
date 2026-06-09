@@ -98,3 +98,59 @@ class OrderOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ----- Allocations (per salesperson + product limits) ------------------------
+
+class AllocationSet(BaseModel):
+    """Admin sets (or tops up) how much of a product a salesperson may sell."""
+    salesperson_id: int
+    product_id: int
+    allocated_qty: int
+
+
+class AllocationOut(BaseModel):
+    id: int
+    salesperson_id: int
+    product_id: int
+    allocated_qty: int
+    used_qty: int
+    remaining_qty: int
+    allocation_mode: AllocationMode
+
+    class Config:
+        from_attributes = True
+
+
+# ----- First-come-first-serve shared pools -----------------------------------
+
+class FcfsPoolSet(BaseModel):
+    """Admin sets the shared pool size for a first-come-first-serve product."""
+    product_id: int
+    lot_id: Optional[int] = None
+    total_qty: int
+
+
+class FcfsPoolOut(BaseModel):
+    id: int
+    product_id: int
+    lot_id: Optional[int] = None
+    total_qty: int
+    reserved_qty: int
+    available_qty: int
+
+    class Config:
+        from_attributes = True
+
+
+# ----- Stock alerts (raised when a salesperson hits a limit) ------------------
+
+class StockAlertOut(BaseModel):
+    id: int
+    salesperson_id: int
+    product_id: int
+    triggered_at: datetime
+    resolved: bool
+
+    class Config:
+        from_attributes = True

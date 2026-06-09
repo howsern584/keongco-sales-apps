@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from .. import models, schemas
+from .. import models, schemas, stock
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -86,7 +86,25 @@ def add_line(order_id: int, line: schemas.LineItemCreate, db: Session = Depends(
         if lot is None or lot.product_id != product.id:
             raise HTTPException(status_code=400, detail="Lot does not match the product")
 
-    # TODO (Phase 2c): check the salesperson's allocation/FCFS pool before allowing this.
+    # Check stock: this line plus any earlier lines for the same product in this
+    # order must fit within the salesperson's balance (or the FCFS pool).
+    already_in_order = sum(
+        li.quantity for li in order.line_items if li.product_id == product.id
+    )
+    requested = already_in_order + line.quantity
+    available = stock.available_for(db, order.salesperson_id, product)
+    if requested > available:
+        stock.raise_alert(db, order.salesperson_id, product.id)
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Stock limit reached for '{product.description}'. "
+                f"You can order up to {available} {product.unit.value} "
+                f"(you already have {already_in_order} in this order). "
+                f"Admin has been alerted to allocate more."
+            ),
+        )
 
     new_line = models.OrderLineItem(
         order_id=order.id,
@@ -113,7 +131,11 @@ def submit_order(order_id: int, db: Session = Depends(get_db)):
     if len(order.line_items) == 0:
         raise HTTPException(status_code=400, detail="Cannot submit an empty order")
 
-    # TODO (Phase 2c): deduct allocation / reserve FCFS stock on submit.
+    # Reserve/deduct stock now that the order is being submitted.
+    try:
+        stock.deduct_on_submit(db, order)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     order.status = models.OrderStatus.submitted
     db.commit()
