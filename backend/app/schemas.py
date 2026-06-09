@@ -93,6 +93,9 @@ class OrderOut(BaseModel):
     salesperson_id: int
     status: OrderStatus
     created_at: datetime
+    approved_by: Optional[int] = None
+    approved_at: Optional[datetime] = None
+    sage_order_ref: Optional[str] = None
     reject_note: Optional[str] = None
     line_items: List[LineItemOut] = []
 
