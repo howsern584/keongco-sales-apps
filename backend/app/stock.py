@@ -90,6 +90,33 @@ def deduct_on_submit(db: Session, order: models.Order) -> None:
             alloc.remaining_qty -= qty
 
 
+def return_on_reject(db: Session, order: models.Order) -> None:
+    """
+    Return reserved/deducted stock when an order is rejected or cancelled.
+    This is the mirror of deduct_on_submit.
+    """
+    qty_by_product: dict[int, int] = {}
+    for line in order.line_items:
+        qty_by_product[line.product_id] = qty_by_product.get(line.product_id, 0) + line.quantity
+
+    for product_id, qty in qty_by_product.items():
+        product = db.query(models.Product).get(product_id)
+        if product.allocation_mode == models.AllocationMode.fcfs:
+            pool = (
+                db.query(models.FcfsPool)
+                .filter(models.FcfsPool.product_id == product_id)
+                .first()
+            )
+            if pool:
+                pool.reserved_qty = max(0, pool.reserved_qty - qty)
+                pool.available_qty = pool.total_qty - pool.reserved_qty
+        else:
+            alloc = _get_allocation(db, order.salesperson_id, product_id)
+            if alloc:
+                alloc.used_qty = max(0, alloc.used_qty - qty)
+                alloc.remaining_qty = alloc.allocated_qty - alloc.used_qty
+
+
 def _get_allocation(db: Session, salesperson_id: int, product_id: int):
     return (
         db.query(models.Allocation)
