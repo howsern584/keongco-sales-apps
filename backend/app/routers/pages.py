@@ -21,7 +21,7 @@ from .. import models
 router = APIRouter()
 
 # Render templates directly with Jinja2 — no Starlette wrapper needed.
-_env = Environment(loader=FileSystemLoader("app/templates"), autoescape=True)
+_env = Environment(loader=FileSystemLoader("app/templates"), autoescape=True, auto_reload=True)
 
 
 def render(name: str, **ctx) -> HTMLResponse:
@@ -117,7 +117,18 @@ def new_order_page(request: Request, db: Session = Depends(get_db)):
         return redirect
     if user.role != models.UserRole.salesperson:
         return RedirectResponse("/app/orders", status_code=302)
-    return render("order_new.html", salesperson_id=user.id, role=user.role.value, user=user)
+    products = (
+        db.query(models.Product)
+        .filter(models.Product.status == models.ProductStatus.active)
+        .order_by(models.Product.description)
+        .all()
+    )
+    return render("order_new.html",
+        salesperson_id=user.id,
+        role=user.role.value,
+        user=user,
+        products=products,
+    )
 
 
 @router.get("/app/orders/{order_id}", response_class=HTMLResponse)

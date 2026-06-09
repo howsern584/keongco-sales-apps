@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% set show_nav = true %}
-{% set active = "orders" %}
+{% set show_nav = false %}
 
 {% block content %}
+<!-- Header row -->
 <div class="flex items-center gap-3 mb-4">
   <a href="/app/orders" class="text-gray-500 hover:text-brand">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -12,291 +12,212 @@
   <h2 class="text-xl font-bold" data-i18n="new_order_title">New Order</h2>
 </div>
 
-<form id="order-form" class="space-y-5">
-
-  <!-- Step 1: Customer -->
-  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-    <label class="block text-sm font-semibold text-gray-700 mb-2" data-i18n="select_customer">Select Customer</label>
-    <input id="customer-search" type="text"
-           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand"
-           data-i18n="search_customer" placeholder="Search customer…"
-           oninput="searchCustomers(this.value)"/>
-    <div id="customer-results" class="mt-2 space-y-1 max-h-48 overflow-y-auto hidden"></div>
-    <div id="selected-customer" class="hidden mt-2 bg-brand-light text-brand font-medium rounded-lg px-3 py-2 flex justify-between items-center">
-      <span id="selected-customer-name"></span>
-      <button type="button" onclick="clearCustomer()" class="text-brand hover:text-brand-dark">✕</button>
-    </div>
-    <input type="hidden" id="customer-id" name="customer_id"/>
-  </div>
-
-  <!-- Step 2: Line items -->
-  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-    <div class="flex items-center justify-between mb-2">
-      <label class="text-sm font-semibold text-gray-700" data-i18n="add_product">Add Product</label>
-    </div>
-    <input id="product-search" type="text"
-           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand"
-           data-i18n="search_product" placeholder="Search product…"
-           oninput="searchProducts(this.value)"/>
-    <div id="product-results" class="mt-2 space-y-1 max-h-48 overflow-y-auto hidden"></div>
-
-    <!-- Lines added so far -->
-    <div id="lines-list" class="mt-3 space-y-2"></div>
-
-    <!-- Grand total -->
-    <div id="grand-total-row" class="hidden mt-3 pt-3 border-t border-gray-100 flex justify-between font-semibold">
-      <span data-i18n="total_label">Total</span>
-      <span id="grand-total" class="text-brand">RM 0.00</span>
-    </div>
-  </div>
-
-  <!-- Buttons -->
-  <div class="flex gap-3">
-    <button type="button" onclick="saveOrder('draft')"
-            class="flex-1 border border-brand text-brand font-semibold py-3 rounded-lg hover:bg-brand-light transition">
-      <span data-i18n="save_draft">Save Draft</span>
-    </button>
-    <button type="button" onclick="saveOrder('submit')"
-            class="flex-1 bg-brand text-white font-semibold py-3 rounded-lg hover:bg-brand-dark transition">
-      <span data-i18n="submit_order">Submit for Review</span>
+<!-- Customer selector -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
+  <label class="block text-sm font-semibold text-gray-700 mb-2" data-i18n="select_customer">Select Customer</label>
+  <input id="customer-search" type="text" autocomplete="off"
+         placeholder="Search customer…"
+         oninput="searchCustomers(this.value)"
+         class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand"/>
+  <div id="customer-results"
+       class="hidden mt-1 border border-gray-200 rounded-lg bg-white shadow-lg max-h-48 overflow-y-auto z-20 relative"></div>
+  <div id="selected-customer"
+       class="hidden mt-2 flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+    <span id="selected-customer-name" class="text-sm font-semibold text-brand"></span>
+    <button onclick="clearCustomer()" class="text-gray-400 hover:text-red-500 ml-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+      </svg>
     </button>
   </div>
+</div>
 
-  <div id="form-error" class="hidden bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3"></div>
-</form>
-
-<!-- Add-line modal -->
-<div id="line-modal" class="hidden fixed inset-0 bg-black/40 flex items-end z-50">
-  <div class="bg-white w-full max-w-lg mx-auto rounded-t-2xl p-5 space-y-4">
-    <h3 class="font-bold text-lg" id="modal-product-name"></h3>
-    <p class="text-xs text-gray-500" id="modal-price-hint"></p>
-
-    <!-- Lot selector -->
-    <div id="modal-lot-row">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Lot</label>
-      <select id="modal-lot" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand">
-        <option value="">— any lot —</option>
-      </select>
-      <button type="button" id="view-photos-btn" onclick="viewPhotos()"
-              class="mt-1 text-xs text-brand underline" data-i18n="view_photos">View Photos</button>
-    </div>
-
-    <div class="flex gap-3">
-      <div class="flex-1">
-        <label class="block text-sm font-medium text-gray-700 mb-1" data-i18n="qty_label">Qty</label>
-        <input id="modal-qty" type="number" min="1" value="1"
-               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand"
-               oninput="updateModalTotal()"/>
+<!-- Product list -->
+<div class="mb-28">
+  <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3" data-i18n="products_title">Products</h3>
+  <div class="space-y-2">
+    {% for p in products %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 flex items-center gap-3">
+      <!-- Product info -->
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-gray-800 truncate">{{ p.description }}</div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          RM {{ "%.2f" | format(p.base_price) }} / {{ p.unit.value }}
+          {% if p.price_floor %}
+          <span class="text-gray-400">· RM {{ "%.2f" | format(p.price_floor) }}–{{ "%.2f" | format(p.price_ceiling) }}</span>
+          {% endif %}
+        </div>
+        <!-- Price override field — shown when qty > 0 -->
+        <div id="price-row-{{ p.id }}" class="hidden mt-1.5 flex items-center gap-1.5">
+          <span class="text-xs text-gray-500">RM</span>
+          <input type="number" id="price-{{ p.id }}"
+                 value="{{ "%.2f" | format(p.base_price) }}"
+                 min="{{ p.price_floor if p.price_floor else '0' }}"
+                 max="{{ p.price_ceiling if p.price_ceiling else '' }}"
+                 step="0.01"
+                 onchange="updateTotal()"
+                 class="w-20 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand"/>
+          <span class="text-xs text-gray-400">/ {{ p.unit.value }}</span>
+        </div>
       </div>
-      <div class="flex-1">
-        <label class="block text-sm font-medium text-gray-700 mb-1" data-i18n="price_label">Unit Price (RM)</label>
-        <input id="modal-price" type="number" step="0.01" min="0"
-               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand"
-               oninput="updateModalTotal()"/>
+      <!-- Qty controls -->
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button onclick="changeQty({{ p.id }}, -1)"
+                class="w-8 h-8 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 active:bg-gray-200 flex items-center justify-center text-lg leading-none">−</button>
+        <input type="number" id="qty-{{ p.id }}" value="0" min="0"
+               oninput="onQtyInput({{ p.id }})"
+               class="w-12 text-center border border-gray-300 rounded-lg py-1 text-base focus:outline-none focus:ring-2 focus:ring-brand"/>
+        <button onclick="changeQty({{ p.id }}, 1)"
+                class="w-8 h-8 rounded-full bg-brand text-white hover:bg-brand-dark flex items-center justify-center text-lg leading-none">+</button>
       </div>
     </div>
-    <div class="flex justify-between text-sm font-medium">
-      <span data-i18n="total_label">Total</span>
-      <span id="modal-total" class="text-brand">RM 0.00</span>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Sticky footer -->
+<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 z-30">
+  <div class="max-w-lg mx-auto">
+    <div class="flex items-center justify-between mb-2 text-sm">
+      <span class="text-gray-500" data-i18n="total_label">Total</span>
+      <span id="footer-total" class="font-bold text-lg text-brand">RM 0.00</span>
     </div>
-    <div id="modal-error" class="hidden text-red-600 text-sm"></div>
     <div class="flex gap-3">
-      <button onclick="closeModal()"
-              class="flex-1 border border-gray-300 text-gray-600 font-semibold py-3 rounded-lg hover:bg-gray-50 transition"
-              data-i18n="btn_cancel">Cancel</button>
-      <button onclick="addLine()"
-              class="flex-1 bg-brand text-white font-semibold py-3 rounded-lg hover:bg-brand-dark transition"
-              data-i18n="btn_confirm">Confirm</button>
+      <button onclick="saveDraft()"
+              class="flex-1 border border-brand text-brand font-semibold py-3 rounded-xl hover:bg-green-50 transition text-sm"
+              data-i18n="save_draft">Save Draft</button>
+      <button onclick="submitOrder()"
+              class="flex-1 bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition text-sm"
+              data-i18n="submit_order">Submit for Review</button>
     </div>
   </div>
 </div>
 
-<!-- Photos lightbox -->
-<div id="photos-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-  <div class="bg-white rounded-2xl p-4 w-full max-w-sm">
-    <div class="flex justify-between items-center mb-3">
-      <h3 class="font-bold" data-i18n="view_photos">View Photos</h3>
-      <button onclick="closePhotos()" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
-    </div>
-    <div id="photos-container" class="space-y-2 max-h-96 overflow-y-auto">
-      <p class="text-gray-400 text-sm text-center py-8" data-i18n="no_photos">No photos yet.</p>
-    </div>
-  </div>
-</div>
+<!-- Error toast -->
+<div id="toast"
+     class="hidden fixed top-16 left-1/2 -translate-x-1/2 bg-red-600 text-white text-sm px-4 py-2 rounded-xl shadow-lg z-50"></div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const SALESPERSON_ID = {{ salesperson_id }};
-let lines = [];       // array of {product_id, lot_id, product_name, qty, price, unit}
-let currentProduct = null;
+const PRODUCTS = {
+  {% for p in products %}
+  {{ p.id }}: {
+    id: {{ p.id }},
+    basePrice: {{ p.base_price }},
+    priceFloor: {{ p.price_floor if p.price_floor else 'null' }},
+    priceCeiling: {{ p.price_ceiling if p.price_ceiling else 'null' }},
+  },
+  {% endfor %}
+};
+
+let selectedCustomerId = null;
 
 // ---------- Customer search ----------
-async function searchCustomers(q) {
-  if (q.length < 1) { hide('customer-results'); return; }
-  const data = await api(`/customers?q=${encodeURIComponent(q)}`);
-  const box = document.getElementById('customer-results');
-  box.innerHTML = data.map(c => `
-    <button type="button" onclick="selectCustomer(${c.id}, '${esc(c.name)}')"
-            class="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-light text-sm border border-gray-100">
-      ${esc(c.name)} <span class="text-gray-400 text-xs">${esc(c.sage_customer_code)}</span>
-    </button>`).join('');
-  show('customer-results');
+let _cTimer = null;
+function searchCustomers(q) {
+  clearTimeout(_cTimer);
+  if (q.length < 1) { hideResults(); return; }
+  _cTimer = setTimeout(async () => {
+    const res = await fetch(`/customers?q=${encodeURIComponent(q)}`);
+    const list = await res.json();
+    const box = document.getElementById('customer-results');
+    box.innerHTML = list.length
+      ? list.map(c => `
+          <button onclick='selectCustomer(${c.id}, ${JSON.stringify(c.name)})'
+                  class="w-full text-left px-4 py-2.5 text-sm hover:bg-green-50 border-b last:border-0 border-gray-100">
+            <span class="font-medium">${c.name}</span>
+            <span class="text-gray-400 ml-2 text-xs">${c.sage_customer_code || ''}</span>
+          </button>`).join('')
+      : '<p class="px-4 py-3 text-sm text-gray-400">No customers found.</p>';
+    box.classList.remove('hidden');
+  }, 250);
 }
 function selectCustomer(id, name) {
-  document.getElementById('customer-id').value = id;
-  document.getElementById('selected-customer-name').textContent = name;
-  show('selected-customer'); hide('customer-results');
+  selectedCustomerId = id;
   document.getElementById('customer-search').value = '';
+  document.getElementById('selected-customer-name').textContent = name;
+  document.getElementById('selected-customer').classList.remove('hidden');
+  hideResults();
 }
 function clearCustomer() {
-  document.getElementById('customer-id').value = '';
-  hide('selected-customer');
+  selectedCustomerId = null;
+  document.getElementById('selected-customer').classList.add('hidden');
 }
-
-// ---------- Product search ----------
-async function searchProducts(q) {
-  if (q.length < 1) { hide('product-results'); return; }
-  const data = await api(`/products?q=${encodeURIComponent(q)}`);
-  const box = document.getElementById('product-results');
-  box.innerHTML = data.map(p => `
-    <button type="button" onclick="openModal(${p.id})"
-            class="w-full text-left px-3 py-2 rounded-lg hover:bg-brand-light text-sm border border-gray-100 flex justify-between">
-      <span>${esc(p.description)}</span>
-      <span class="text-gray-400 text-xs">${esc(p.unit)}</span>
-    </button>`).join('');
-  show('product-results');
+function hideResults() {
+  document.getElementById('customer-results').classList.add('hidden');
 }
+document.addEventListener('click', e => {
+  if (!e.target.closest('#customer-search') && !e.target.closest('#customer-results')) hideResults();
+});
 
-// ---------- Add-line modal ----------
-async function openModal(productId) {
-  hide('product-results');
-  document.getElementById('product-search').value = '';
-  const p = await api(`/products`);
-  currentProduct = p.find(x => x.id === productId);
-  if (!currentProduct) return;
-
-  document.getElementById('modal-product-name').textContent = currentProduct.description;
-  const hint = currentProduct.price_floor != null
-    ? `RM ${currentProduct.price_floor} – RM ${currentProduct.price_ceiling} / ${currentProduct.unit}`
-    : `Base: RM ${currentProduct.base_price} / ${currentProduct.unit}`;
-  document.getElementById('modal-price-hint').textContent = hint;
-  document.getElementById('modal-price').value = currentProduct.base_price;
-  document.getElementById('modal-qty').value = 1;
-  document.getElementById('modal-error').classList.add('hidden');
-
-  // Load lots for this product
-  const lots = await api(`/products/${productId}/lots`);
-  const sel = document.getElementById('modal-lot');
-  sel.innerHTML = '<option value="">— any lot —</option>' +
-    lots.map(l => `<option value="${l.id}">${esc(l.lot_code)} (${l.received_date.slice(0,10)})</option>`).join('');
-
-  updateModalTotal();
-  show('line-modal');
+// ---------- Qty controls ----------
+function changeQty(id, delta) {
+  const input = document.getElementById(`qty-${id}`);
+  input.value = Math.max(0, (parseInt(input.value) || 0) + delta);
+  onQtyInput(id);
 }
-function closeModal() { hide('line-modal'); currentProduct = null; }
-function updateModalTotal() {
-  const qty = parseFloat(document.getElementById('modal-qty').value) || 0;
-  const price = parseFloat(document.getElementById('modal-price').value) || 0;
-  document.getElementById('modal-total').textContent = `RM ${(qty * price).toFixed(2)}`;
+function onQtyInput(id) {
+  const qty = parseInt(document.getElementById(`qty-${id}`).value) || 0;
+  document.getElementById(`price-row-${id}`).classList.toggle('hidden', qty === 0);
+  updateTotal();
 }
-function addLine() {
-  const qty = parseInt(document.getElementById('modal-qty').value);
-  const price = parseFloat(document.getElementById('modal-price').value);
-  const lotId = document.getElementById('modal-lot').value || null;
-  const errEl = document.getElementById('modal-error');
-
-  if (!qty || qty < 1) { errEl.textContent = 'Quantity must be at least 1'; show('modal-error'); return; }
-  if (!price || price <= 0) { errEl.textContent = 'Please enter a price'; show('modal-error'); return; }
-  if (currentProduct.price_floor && price < currentProduct.price_floor) {
-    errEl.textContent = `Min price: RM ${currentProduct.price_floor}`; show('modal-error'); return;
+function updateTotal() {
+  let total = 0;
+  for (const id in PRODUCTS) {
+    const qty   = parseInt(document.getElementById(`qty-${id}`).value)   || 0;
+    const price = parseFloat(document.getElementById(`price-${id}`).value) || PRODUCTS[id].basePrice;
+    total += qty * price;
   }
-  if (currentProduct.price_ceiling && price > currentProduct.price_ceiling) {
-    errEl.textContent = `Max price: RM ${currentProduct.price_ceiling}`; show('modal-error'); return;
-  }
-
-  lines.push({ product_id: currentProduct.id, lot_id: lotId ? parseInt(lotId) : null,
-               product_name: currentProduct.description, unit: currentProduct.unit, qty, price });
-  renderLines();
-  closeModal();
-}
-function removeLine(i) { lines.splice(i, 1); renderLines(); }
-function renderLines() {
-  const el = document.getElementById('lines-list');
-  if (lines.length === 0) { el.innerHTML = ''; hide('grand-total-row'); return; }
-  el.innerHTML = lines.map((l, i) => `
-    <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
-      <div>
-        <div class="font-medium">${esc(l.product_name)}</div>
-        <div class="text-gray-500 text-xs">${l.qty} ${esc(l.unit)} × RM ${l.price.toFixed(2)}</div>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-brand font-semibold">RM ${(l.qty * l.price).toFixed(2)}</span>
-        <button onclick="removeLine(${i})" class="text-red-400 hover:text-red-600 text-lg leading-none">✕</button>
-      </div>
-    </div>`).join('');
-  const total = lines.reduce((s, l) => s + l.qty * l.price, 0);
-  document.getElementById('grand-total').textContent = `RM ${total.toFixed(2)}`;
-  show('grand-total-row');
+  document.getElementById('footer-total').textContent = `RM ${total.toFixed(2)}`;
 }
 
-// ---------- Photos ----------
-async function viewPhotos() {
-  const lotId = document.getElementById('modal-lot').value;
-  if (!lotId) { alert('Please select a lot first.'); return; }
-  const photos = await api(`/lots/${lotId}/photos`);
-  const box = document.getElementById('photos-container');
-  if (photos.length === 0) {
-    box.innerHTML = `<p class="text-gray-400 text-sm text-center py-8">${t('no_photos')}</p>`;
-  } else {
-    box.innerHTML = photos.map(p => `
-      <div class="rounded-lg overflow-hidden border border-gray-100">
-        <img src="${p.url}" alt="Lot photo" class="w-full object-cover max-h-64"/>
-        <p class="text-xs text-gray-400 px-2 py-1">${p.taken_at.slice(0,16).replace('T',' ')}</p>
-      </div>`).join('');
-  }
-  show('photos-modal');
+// ---------- Build & submit ----------
+function getLines() {
+  return Object.keys(PRODUCTS).flatMap(id => {
+    const qty = parseInt(document.getElementById(`qty-${id}`).value) || 0;
+    if (qty <= 0) return [];
+    const price = parseFloat(document.getElementById(`price-${id}`).value) || PRODUCTS[id].basePrice;
+    return [{ product_id: parseInt(id), quantity: qty, unit_price: price }];
+  });
 }
-function closePhotos() { hide('photos-modal'); }
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 3500);
+}
+async function buildOrder(submit) {
+  if (!selectedCustomerId) { showToast('Please select a customer first.'); return; }
+  const lines = getLines();
+  if (!lines.length) { showToast('Add at least one product quantity.'); return; }
 
-// ---------- Save / Submit ----------
-async function saveOrder(action) {
-  const customerId = document.getElementById('customer-id').value;
-  const errEl = document.getElementById('form-error');
-  hide('form-error');
+  const r1 = await fetch('/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customer_id: selectedCustomerId, salesperson_id: SALESPERSON_ID }),
+  });
+  if (!r1.ok) { showToast((await r1.json()).detail || 'Could not create order.'); return; }
+  const order = await r1.json();
 
-  if (!customerId) { errEl.textContent = 'Please select a customer.'; show('form-error'); return; }
-  if (lines.length === 0) { errEl.textContent = 'Please add at least one product.'; show('form-error'); return; }
-
-  // 1. Create draft order
-  const order = await api('/orders', 'POST', { customer_id: parseInt(customerId), salesperson_id: SALESPERSON_ID });
-  if (order.detail) { errEl.textContent = order.detail; show('form-error'); return; }
-
-  // 2. Add each line
-  for (const l of lines) {
-    const res = await api(`/orders/${order.id}/lines`, 'POST',
-      { product_id: l.product_id, lot_id: l.lot_id, quantity: l.qty, unit_price: l.price });
-    if (res.detail) { errEl.textContent = res.detail; show('form-error'); return; }
+  for (const line of lines) {
+    const r2 = await fetch(`/orders/${order.id}/lines`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(line),
+    });
+    if (!r2.ok) { showToast((await r2.json()).detail || 'Could not add line.'); return; }
   }
 
-  // 3. Submit if requested
-  if (action === 'submit') {
-    const res = await api(`/orders/${order.id}/submit`, 'POST');
-    if (res.detail) { errEl.textContent = res.detail; show('form-error'); return; }
+  if (submit) {
+    const r3 = await fetch(`/orders/${order.id}/submit`, { method: 'POST' });
+    if (!r3.ok) { showToast((await r3.json()).detail || 'Could not submit order.'); return; }
   }
 
-  window.location.href = '/app/orders';
+  window.location.href = `/app/orders/${order.id}`;
 }
-
-// ---------- Helpers ----------
-async function api(path, method='GET', body=null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(path, opts);
-  return r.json();
-}
-function show(id) { document.getElementById(id)?.classList.remove('hidden'); }
-function hide(id) { document.getElementById(id)?.classList.add('hidden'); }
-function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function saveDraft()   { buildOrder(false); }
+function submitOrder() { buildOrder(true); }
 </script>
 {% endblock %}
