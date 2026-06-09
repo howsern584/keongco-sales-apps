@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title data-i18n="app_name">Keongco Sales</title>
+  <!-- Tailwind CSS from CDN — no install needed -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: "#16a34a", dark: "#15803d", light: "#dcfce7" }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Smooth status badge colours */
+    .badge-draft          { @apply bg-gray-100  text-gray-600; }
+    .badge-submitted      { @apply bg-blue-100  text-blue-700; }
+    .badge-approved       { @apply bg-green-100 text-green-700; }
+    .badge-pushed_to_sage { @apply bg-purple-100 text-purple-700; }
+    .badge-rejected       { @apply bg-red-100   text-red-700; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen pb-20">
+
+  <!-- Top bar -->
+  <header class="bg-brand text-white px-4 py-3 flex items-center justify-between shadow sticky top-0 z-10">
+    <span class="font-bold text-lg" data-i18n="app_name">Keongco Sales</span>
+    <button id="lang-toggle"
+            onclick="toggleLang()"
+            class="text-xs border border-white rounded px-2 py-1 hover:bg-brand-dark transition">
+      中文
+    </button>
+  </header>
+
+  <!-- Page content injected here -->
+  <main class="max-w-lg mx-auto px-4 pt-4">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Bottom nav (hidden on login page) -->
+  {% if show_nav %}
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 z-10">
+    <a href="/app/orders"
+       class="flex flex-col items-center text-xs {% if active == 'orders' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
+      <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+      <span data-i18n="nav_orders">Orders</span>
+    </a>
+    <a href="/app/products"
+       class="flex flex-col items-center text-xs {% if active == 'products' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
+      <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
+      </svg>
+      <span data-i18n="nav_products">Products</span>
+    </a>
+    {% if role == 'admin' %}
+    <a href="/app/admin"
+       class="flex flex-col items-center text-xs {% if active == 'admin' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
+      <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+      </svg>
+      <span data-i18n="nav_admin">Admin</span>
+    </a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  <!-- Language + shared JS -->
+  <script src="/static/js/lang.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "orders" %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h2 class="text-xl font-bold" data-i18n="orders_title">My Orders</h2>
+  {% if role == 'salesperson' %}
+  <a href="/app/orders/new"
+     class="bg-brand text-white text-sm font-semibold px-4 py-2 rounded-lg flex items-center gap-1">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+    </svg>
+    <span data-i18n="order_new">New Order</span>
+  </a>
+  {% endif %}
+</div>
+
+{% if orders %}
+<div class="space-y-3">
+  {% for order in orders %}
+  <a href="/app/orders/{{ order.id }}"
+     class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
+    <div class="flex items-center justify-between mb-1">
+      <span class="font-semibold text-gray-800"># {{ order.id }} — {{ order.customer_name }}</span>
+      <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">
+        {{ order.status | replace('_', ' ') | title }}
+      </span>
+    </div>
+    <div class="text-sm text-gray-500 flex justify-between">
+      <span>{{ order.line_count }} item{% if order.line_count != 1 %}s{% endif %}</span>
+      <span>RM {{ "%.2f" | format(order.total) }}</span>
+    </div>
+    <div class="text-xs text-gray-400 mt-1">{{ order.created_at[:10] }}</div>
+    {% if order.status == 'rejected' and order.reject_note %}
+    <div class="mt-2 text-xs text-red-600 bg-red-50 rounded px-2 py-1">
+      <span data-i18n="reject_note_label">Rejection Note</span>: {{ order.reject_note }}
+    </div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center text-gray-400 mt-20">
+  <svg class="w-16 h-16 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+  </svg>
+  <p data-i18n="order_no_orders">No orders yet.</p>
+</div>
+{% endif %}
+{% endblock %}
