@@ -6,7 +6,7 @@ This file defines every TABLE in our database, in plain Python.
 Each Python class below = one table.
 Each attribute (column) = one piece of data we store.
 
-These mirror the data model agreed in CLAUDE.md. No business logic yet —
+These mirror the data model agreed in CLAUDE.md. No business logic yet --
 Phase 1 is only about getting the foundation (the tables) right.
 """
 
@@ -68,6 +68,8 @@ class User(Base):
     name = Column(String, nullable=False)
     login = Column(String, unique=True, nullable=False)   # username for login
     role = Column(Enum(UserRole), nullable=False)
+    password_hash = Column(String, nullable=True)         # bcrypt hash; None = no password set yet
+    is_active = Column(Boolean, default=True)             # False = account disabled (can't log in)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -80,6 +82,8 @@ class Customer(Base):
     name = Column(String, nullable=False)
     pricing_tier = Column(String, nullable=True)
     contact = Column(String, nullable=True)
+    whatsapp = Column(String, nullable=True)   # international format, no +, e.g. "60123456789"
+    is_active = Column(Boolean, default=True)  # soft-delete: False = hidden from new orders
 
 
 class Product(Base):
@@ -95,6 +99,8 @@ class Product(Base):
     # Salespeople may adjust price, but only within this range (admin sets it).
     price_floor = Column(Float, nullable=True)
     price_ceiling = Column(Float, nullable=True)
+    special_price = Column(Float, nullable=True)   # optional discount / promo price shown to salesperson
+    remark = Column(String, nullable=True)          # admin notes: brand, marking, packaging notes
 
     status = Column(Enum(ProductStatus), default=ProductStatus.active, nullable=False)
     allocation_mode = Column(Enum(AllocationMode), nullable=False)
@@ -111,6 +117,7 @@ class Lot(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     lot_code = Column(String, nullable=False)             # e.g. warehouse batch label
     received_date = Column(DateTime, default=datetime.utcnow)
+    qty_on_hand = Column(Integer, default=0, nullable=False)  # physical stock count for this lot
     notes = Column(Text, nullable=True)
 
     product = relationship("Product", back_populates="lots")
@@ -178,6 +185,11 @@ class Order(Base):
     status = Column(Enum(OrderStatus), default=OrderStatus.draft, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Delivery info -- critical for advance ordering in fresh produce
+    delivery_date = Column(DateTime, nullable=True)       # requested delivery date
+    order_notes = Column(Text, nullable=True)             # any special instructions
+    transport   = Column(String(100), nullable=True)      # e.g. Keongco, Tong Transport
+
     approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # which admin
     approved_at = Column(DateTime, nullable=True)
     sage_order_ref = Column(String, nullable=True)        # filled in Phase 3 after push
@@ -196,8 +208,13 @@ class OrderLineItem(Base):
     lot_id = Column(Integer, ForeignKey("lots.id"), nullable=True)
 
     quantity = Column(Integer, nullable=False)
-    unit_price = Column(Float, nullable=False)            # validated against price range
+    unit_price = Column(Float, nullable=False)
     line_total = Column(Float, nullable=False)
+
+    # True when salesperson entered a price outside the admin-set floor/ceiling.
+    # override_reason is required in that case so invoicing can judge it.
+    price_override = Column(Boolean, default=False, nullable=False)
+    override_reason = Column(Text, nullable=True)
 
     order = relationship("Order", back_populates="line_items")
 
@@ -211,3 +228,15 @@ class StockAlert(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     triggered_at = Column(DateTime, default=datetime.utcnow)
     resolved = Column(Boolean, default=False, nullable=False)
+
+
+class PriceHistory(Base):
+    """Every time admin changes a product's base price, we record the old and new value here."""
+    __tablename__ = "price_history"
+
+    id = Column(Integer, primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)  # admin user
+    old_price = Column(Float, nullable=False)
+    new_price = Column(Float, nullable=False)
+    changed_at = Column(DateTime, default=datetime.utcnow)

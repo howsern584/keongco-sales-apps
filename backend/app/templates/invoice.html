@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<!-- -*- coding: utf-8 -*- -->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<style>
+  /* -- Page setup -- */
+  @page {
+    size: A4;
+    margin: 18mm 20mm 18mm 20mm;
+  }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+    color: #1a1a1a;
+    margin: 0;
+  }
+
+  /* -- Header -- */
+  .header {
+    border-bottom: 2.5pt solid #2d6a2d;
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .company-name {
+    font-size: 20pt;
+    font-weight: bold;
+    color: #2d6a2d;
+    margin: 0 0 2px 0;
+  }
+  .company-sub {
+    font-size: 9pt;
+    color: #555;
+    margin: 0;
+  }
+  .invoice-title {
+    float: right;
+    text-align: right;
+    margin-top: 4px;
+  }
+  .invoice-title h2 {
+    font-size: 16pt;
+    color: #2d6a2d;
+    margin: 0 0 4px 0;
+    letter-spacing: 1px;
+  }
+  .invoice-ref {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #333;
+  }
+
+  /* -- Info grid -- */
+  .info-grid {
+    width: 100%;
+    margin-bottom: 16px;
+    border-collapse: collapse;
+  }
+  .info-grid td {
+    vertical-align: top;
+    padding: 0;
+    width: 50%;
+  }
+  .info-block h4 {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    margin: 0 0 4px 0;
+  }
+  .info-block p {
+    margin: 1px 0;
+    font-size: 10pt;
+  }
+  .info-block .bold { font-weight: bold; }
+
+  /* -- Line items table -- */
+  .items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+  }
+  .items-table thead tr {
+    background-color: #2d6a2d;
+    color: white;
+  }
+  .items-table thead th {
+    padding: 6px 8px;
+    font-size: 9pt;
+    text-align: left;
+    font-weight: bold;
+  }
+  .items-table thead th.right { text-align: right; }
+  .items-table tbody tr:nth-child(even) {
+    background-color: #f5f9f5;
+  }
+  .items-table tbody td {
+    padding: 6px 8px;
+    font-size: 10pt;
+    border-bottom: 0.5pt solid #e0e0e0;
+  }
+  .items-table tbody td.right { text-align: right; }
+  .items-table tbody td.center { text-align: center; }
+
+  /* -- Override note -- */
+  .override-note {
+    font-size: 8pt;
+    color: #b45309;
+    font-style: italic;
+  }
+
+  /* -- Totals -- */
+  .totals-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+  }
+  .totals-table td {
+    padding: 4px 8px;
+    font-size: 10pt;
+  }
+  .totals-table .label { text-align: right; color: #555; }
+  .totals-table .amount { text-align: right; width: 110px; font-weight: bold; }
+  .totals-table .grand {
+    font-size: 12pt;
+    color: #2d6a2d;
+    border-top: 1.5pt solid #2d6a2d;
+  }
+
+  /* -- Footer -- */
+  .footer {
+    border-top: 1pt solid #ddd;
+    padding-top: 8px;
+    font-size: 8.5pt;
+    color: #888;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="invoice-title">
+    <h2>INVOICE</h2>
+    <div class="invoice-ref">{{ sage_order_ref }}</div>
+  </div>
+  <p class="company-name">Keongco Malaysia</p>
+  <p class="company-sub">Fresh Produce Trading &nbsp;|&nbsp; Kuala Lumpur, Malaysia</p>
+</div>
+
+<!-- Bill To / Invoice Info -->
+<table class="info-grid">
+  <tr>
+    <td>
+      <div class="info-block">
+        <h4>Bill To</h4>
+        <p class="bold">{{ customer_name }}</p>
+        <p>Customer Code: {{ customer_code }}</p>
+        {% if customer_contact %}<p>Tel: {{ customer_contact }}</p>{% endif %}
+      </div>
+    </td>
+    <td>
+      <div class="info-block" style="text-align:right;">
+        <h4>Invoice Details</h4>
+        <p><b>Invoice Date:</b> {{ invoice_date }}</p>
+        {% if delivery_date %}<p><b>Delivery Date:</b> {{ delivery_date }}</p>{% endif %}
+        <p><b>Salesperson:</b> {{ salesperson_name }}</p>
+        {% if approved_at %}<p><b>Approved:</b> {{ approved_at }}</p>{% endif %}
+        {% if order_notes %}<p><b>Notes:</b> {{ order_notes }}</p>{% endif %}
+      </div>
+    </td>
+  </tr>
+</table>
+
+<!-- Line Items -->
+<table class="items-table">
+  <thead>
+    <tr>
+      <th style="width:5%">#</th>
+      <th>Product</th>
+      <th class="right" style="width:10%">Qty</th>
+      <th style="width:10%">Unit</th>
+      <th class="right" style="width:14%">Unit Price</th>
+      <th class="right" style="width:14%">Total (RM)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in lines %}
+    <tr>
+      <td class="center">{{ loop.index }}</td>
+      <td>
+        {{ line.product_name }}
+        {% if line.lot_code %}<br><span style="font-size:8pt;color:#777">Lot: {{ line.lot_code }}</span>{% endif %}
+        {% if line.price_override %}<br><span class="override-note">! Price override - {{ line.override_reason }}</span>{% endif %}
+      </td>
+      <td class="right">{{ line.quantity }}</td>
+      <td>{{ line.unit }}</td>
+      <td class="right">RM {{ "%.2f"|format(line.unit_price) }}</td>
+      <td class="right">RM {{ "%.2f"|format(line.line_total) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Totals -->
+<table class="totals-table">
+  <tr>
+    <td></td>
+    <td class="label">Subtotal</td>
+    <td class="amount">RM {{ "%.2f"|format(total) }}</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td class="label grand">TOTAL</td>
+    <td class="amount grand">RM {{ "%.2f"|format(total) }}</td>
+  </tr>
+</table>
+
+<!-- Footer -->
+<div class="footer">
+  Thank you for your business with Keongco Malaysia.&nbsp;
+  This invoice was generated electronically and is valid without signature.
+</div>
+
+</body>
+</html>

@@ -12,7 +12,8 @@ alert for that salesperson + product, closing the loop you described.
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -28,7 +29,7 @@ def set_allocation(payload: schemas.AllocationSet, db: Session = Depends(get_db)
     allocated_qty is the NEW total ceiling; remaining = allocated - already used.
     """
     salesperson = db.query(models.User).get(payload.salesperson_id)
-    if salesperson is None or salesperson.role != models.UserRole.salesperson:
+    if salesperson is None or salesperson.role not in (models.UserRole.salesperson, models.UserRole.admin):
         raise HTTPException(status_code=400, detail="Invalid salesperson")
 
     product = db.query(models.Product).get(payload.product_id)
@@ -96,11 +97,158 @@ def set_fcfs_pool(payload: schemas.FcfsPoolSet, db: Session = Depends(get_db)):
 
     pool.lot_id = payload.lot_id
     pool.total_qty = payload.total_qty
-    pool.available_qty = payload.total_qty - pool.reserved_qty
+    pool.reserved_qty = 0          # fresh allocation -- reset the counter
+    pool.available_qty = payload.total_qty
 
     db.commit()
     db.refresh(pool)
     return pool
+
+
+@router.put("/products/{product_id}/price", response_model=schemas.PriceHistoryOut)
+def update_product_price(product_id: int, payload: schemas.ProductPriceUpdate,
+                         request: Request, db: Session = Depends(get_db)):
+    """Admin updates a product's base price (and optional floor/ceiling). Records history."""
+    product = db.query(models.Product).get(product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    # Get admin user from session cookie -- the same cookie the pages use.
+    admin_id = int(request.cookies.get("user_id", 0)) if request.cookies.get("user_id") else None
+    if not admin_id:
+        raise HTTPException(status_code=401, detail="Not logged in")
+
+    old_price = product.base_price
+    record = models.PriceHistory(
+        product_id=product_id,
+        changed_by=admin_id,
+        old_price=old_price,
+        new_price=payload.base_price,
+    )
+    db.add(record)
+
+    product.base_price = payload.base_price
+    if payload.price_floor is not None:
+        product.price_floor = payload.price_floor
+    if payload.price_ceiling is not None:
+        product.price_ceiling = payload.price_ceiling
+    # special_price: save if provided, allow clearing it by passing null
+    product.special_price = payload.special_price
+    # remark: free-text brand/marking/packaging note
+    product.remark = payload.remark if payload.remark and payload.remark.strip() else None
+
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+@router.get("/products/{product_id}/price-history", response_model=List[schemas.PriceHistoryOut])
+def get_price_history(product_id: int, db: Session = Depends(get_db)):
+    """Return the last 20 price changes for a product."""
+    return (
+        db.query(models.PriceHistory)
+        .filter(models.PriceHistory.product_id == product_id)
+        .order_by(models.PriceHistory.changed_at.desc())
+        .limit(20)
+        .all()
+    )
+
+
+@router.post("/fcfs-pools/{product_id}/zero")
+def zero_fcfs_pool(product_id: int, db: Session = Depends(get_db)):
+    """Set available_qty to 0 so no new orders can draw from this pool.
+    Existing reservations (submitted orders) are preserved."""
+    pool = (
+        db.query(models.FcfsPool)
+        .filter(models.FcfsPool.product_id == product_id)
+        .first()
+    )
+    if pool is None:
+        raise HTTPException(status_code=404, detail="No pool found for this product")
+    # Shrink total to whatever is already reserved, so available = 0
+    pool.total_qty = pool.reserved_qty
+    pool.available_qty = 0
+    db.commit()
+    return {"ok": True, "product_id": product_id, "available_qty": 0}
+
+
+@router.delete("/stock-alerts/{alert_id}")
+def dismiss_alert(alert_id: int, db: Session = Depends(get_db)):
+    """Dismiss (delete) a stock alert so it no longer shows in the admin panel."""
+    alert = db.query(models.StockAlert).get(alert_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    db.delete(alert)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/allocations/{allocation_id}")
+def delete_allocation(allocation_id: int, db: Session = Depends(get_db)):
+    """Zero out a salesperson's allocation for a product (sets all qtys to 0)."""
+    alloc = db.query(models.Allocation).get(allocation_id)
+    if alloc is None:
+        raise HTTPException(status_code=404, detail="Allocation not found")
+    alloc.allocated_qty = 0
+    alloc.used_qty = 0
+    alloc.remaining_qty = 0
+    db.commit()
+    return {"ok": True}
+
+
+class ResetAllPayload(BaseModel):
+    qty: int = Field(..., ge=0)
+
+@router.post("/products/{product_id}/reset-all-allocations")
+def reset_all_allocations(product_id: int, payload: ResetAllPayload, db: Session = Depends(get_db)):
+    """Set every salesperson's allocation for a product to the given qty in one shot.
+    Body: { "qty": <int> }
+    Creates allocation rows if they don't exist yet; resets used_qty to 0.
+    """
+    qty = payload.qty
+
+    product = db.query(models.Product).get(product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+
+    # All salespeople + admins
+    salespeople = (
+        db.query(models.User)
+        .filter(
+            models.User.role.in_([models.UserRole.salesperson, models.UserRole.admin]),
+            models.User.is_active.is_(True),
+        )
+        .all()
+    )
+
+    updated = 0
+    for sp in salespeople:
+        alloc = (
+            db.query(models.Allocation)
+            .filter(
+                models.Allocation.salesperson_id == sp.id,
+                models.Allocation.product_id == product_id,
+            )
+            .first()
+        )
+        if alloc:
+            alloc.allocated_qty = qty
+            alloc.used_qty = 0
+            alloc.remaining_qty = qty
+            alloc.allocation_mode = product.allocation_mode
+        else:
+            db.add(models.Allocation(
+                salesperson_id=sp.id,
+                product_id=product_id,
+                allocated_qty=qty,
+                used_qty=0,
+                remaining_qty=qty,
+                allocation_mode=product.allocation_mode,
+            ))
+        updated += 1
+
+    db.commit()
+    return {"ok": True, "updated": updated, "qty": qty}
 
 
 @router.get("/stock-alerts", response_model=List[schemas.StockAlertOut])

@@ -42,7 +42,7 @@ def list_pending_orders(db: Session = Depends(get_db)):
 
 @router.get("/all", response_model=List[schemas.OrderOut])
 def list_all_orders(db: Session = Depends(get_db)):
-    """Every order regardless of status — for the admin overview."""
+    """Every order regardless of status -- for the admin overview."""
     return (
         db.query(models.Order)
         .order_by(models.Order.created_at.desc())
@@ -130,12 +130,12 @@ def push_to_sage(order_id: int, admin_id: int, db: Session = Depends(get_db)):
         for li in order.line_items
     ]
     print("=== [MOCK] Push to Sage 300 ===")
-    print(f"  Customer:  {customer.sage_customer_code} — {customer.name}")
+    print(f"  Customer:  {customer.sage_customer_code} -- {customer.name}")
     print(f"  Order id:  {order.id}")
     for l in lines_summary:
         print(f"  Line: {l['sage_item_code']}  qty={l['quantity']}  "
               f"price={l['unit_price']}  total={l['line_total']}")
-    print("=== [MOCK] Would write order to Sage here — Phase 3 will make this real ===")
+    print("=== [MOCK] Would write order to Sage here -- Phase 3 will make this real ===")
     # --- end of placeholder ---
 
     # Give the order a fake Sage reference number for now.

@@ -10,7 +10,7 @@ or incomplete data from ever reaching the database.
 (models.py = how data is STORED. schemas.py = how data is SENT/RECEIVED.)
 """
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ class CustomerOut(BaseModel):
     name: str
     pricing_tier: Optional[str] = None
     contact: Optional[str] = None
+    whatsapp: Optional[str] = None
 
     class Config:
         from_attributes = True   # lets us build this straight from a DB row
@@ -41,6 +42,8 @@ class ProductOut(BaseModel):
     base_price: float
     price_floor: Optional[float] = None
     price_ceiling: Optional[float] = None
+    special_price: Optional[float] = None
+    remark: Optional[str] = None
     status: ProductStatus
     allocation_mode: AllocationMode
 
@@ -65,6 +68,9 @@ class OrderCreate(BaseModel):
     """What a salesperson sends to START a new (draft) order."""
     customer_id: int
     salesperson_id: int
+    delivery_date: Optional[date] = None    # requested delivery date
+    order_notes: Optional[str] = None       # special instructions
+    transport: Optional[str] = None         # e.g. Keongco, Tong Transport
 
 
 class LineItemCreate(BaseModel):
@@ -73,18 +79,30 @@ class LineItemCreate(BaseModel):
     lot_id: Optional[int] = None
     quantity: int
     unit_price: float
+    price_override: bool = False
+    override_reason: Optional[str] = None
 
 
 class LineItemOut(BaseModel):
     id: int
     product_id: int
+    product_name: Optional[str] = None   # populated by the API endpoint
     lot_id: Optional[int] = None
     quantity: int
     unit_price: float
     line_total: float
+    price_override: bool = False
+    override_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class OrderDetailsUpdate(BaseModel):
+    """Salesperson updates delivery date / notes on a draft order."""
+    delivery_date: Optional[date] = None
+    order_notes: Optional[str] = None
+    transport: Optional[str] = None
 
 
 class OrderOut(BaseModel):
@@ -93,6 +111,9 @@ class OrderOut(BaseModel):
     salesperson_id: int
     status: OrderStatus
     created_at: datetime
+    delivery_date: Optional[datetime] = None
+    order_notes: Optional[str] = None
+    transport: Optional[str] = None
     approved_by: Optional[int] = None
     approved_at: Optional[datetime] = None
     sage_order_ref: Optional[str] = None
@@ -141,6 +162,28 @@ class FcfsPoolOut(BaseModel):
     total_qty: int
     reserved_qty: int
     available_qty: int
+
+    class Config:
+        from_attributes = True
+
+
+# ----- Product price update (admin) -----------------------------------------
+
+class ProductPriceUpdate(BaseModel):
+    """Admin updates a product's base price, optional floor/ceiling, optional special/discount price, and remark."""
+    base_price: float
+    price_floor: Optional[float] = None
+    price_ceiling: Optional[float] = None
+    special_price: Optional[float] = None
+    remark: Optional[str] = None
+
+
+class PriceHistoryOut(BaseModel):
+    id: int
+    product_id: int
+    old_price: float
+    new_price: float
+    changed_at: datetime
 
     class Config:
         from_attributes = True

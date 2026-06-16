@@ -47,12 +47,21 @@
   <!-- Bottom nav (hidden on login page) -->
   {% if show_nav %}
   <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 z-10">
+    {% if role in ('salesperson', 'admin') %}
+    <a href="/app/orders/new"
+       class="flex flex-col items-center text-xs {% if active == 'new_order' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
+      <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+      </svg>
+      <span>New Order</span>
+    </a>
+    {% endif %}
     <a href="/app/orders"
        class="flex flex-col items-center text-xs {% if active == 'orders' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
       <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
       </svg>
-      <span data-i18n="nav_orders">Orders</span>
+      <span>History</span>
     </a>
     <a href="/app/products"
        class="flex flex-col items-center text-xs {% if active == 'products' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
@@ -76,5 +85,203 @@
   <!-- Language + shared JS -->
   <script src="/static/js/lang.js"></script>
   {% block scripts %}{% endblock %}
+
+  <!-- ── Searchable Dropdown ── -->
+  <!-- Automatically upgrades every <select> on the page into a
+       type-to-search combo box. No changes needed to individual pages. -->
+  <style>
+    .kc-select-wrapper   { position: relative; }
+    .kc-select-display   {
+      width: 100%; border: 1px solid #d1d5db; border-radius: 0.5rem;
+      padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 0.875rem;
+      background: white; cursor: pointer; text-align: left;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; align-items: center; justify-content: space-between;
+      min-height: 38px;
+    }
+    .kc-select-display:focus { outline: none; ring: 2px solid #16a34a; border-color: #16a34a; }
+    .kc-select-display .kc-arrow {
+      flex-shrink: 0; margin-left: 6px; color: #9ca3af;
+      transition: transform 0.15s;
+    }
+    .kc-select-display.open .kc-arrow { transform: rotate(180deg); }
+    .kc-select-dropdown {
+      position: absolute; left: 0; right: 0; z-index: 9999;
+      background: white; border: 1px solid #d1d5db; border-radius: 0.5rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12); overflow: hidden;
+      display: none; top: calc(100% + 4px);
+    }
+    .kc-select-dropdown.above { top: auto; bottom: calc(100% + 4px); }
+    .kc-select-dropdown.open  { display: block; }
+    .kc-search-box {
+      width: 100%; border: none; border-bottom: 1px solid #e5e7eb;
+      padding: 0.5rem 0.75rem; font-size: 0.875rem; outline: none;
+      background: #f9fafb;
+    }
+    .kc-options { max-height: 220px; overflow-y: auto; }
+    .kc-option {
+      padding: 0.5rem 0.75rem; font-size: 0.875rem; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .kc-option:hover, .kc-option.focused { background: #f0fdf4; color: #15803d; }
+    .kc-option.selected { font-weight: 600; color: #15803d; }
+    .kc-option.disabled { color: #9ca3af; cursor: default; font-style: italic; }
+    .kc-no-results { padding: 0.5rem 0.75rem; font-size: 0.875rem; color: #9ca3af; }
+  </style>
+
+  <script>
+  (function() {
+    // Selects to skip (already have custom search UI or don't need upgrading)
+    const SKIP_IDS = [];
+
+    function buildSearchable(sel) {
+      if (sel.dataset.kcUpgraded || SKIP_IDS.includes(sel.id)) return;
+      if (sel.closest('.kc-select-wrapper')) return;
+      sel.dataset.kcUpgraded = '1';
+      sel.style.display = 'none';  // hide original
+
+      // Wrapper
+      const wrap = document.createElement('div');
+      wrap.className = 'kc-select-wrapper';
+      sel.parentNode.insertBefore(wrap, sel);
+      wrap.appendChild(sel);
+
+      // Display button
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'kc-select-display';
+      btn.innerHTML = `<span class="kc-label"></span>
+        <svg class="kc-arrow w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>`;
+      wrap.appendChild(btn);
+
+      // Dropdown
+      const drop = document.createElement('div');
+      drop.className = 'kc-select-dropdown';
+      drop.innerHTML = `<input class="kc-search-box" placeholder="Search..." autocomplete="off"/>
+        <div class="kc-options"></div>`;
+      wrap.appendChild(drop);
+
+      const label   = btn.querySelector('.kc-label');
+      const search  = drop.querySelector('.kc-search-box');
+      const optBox  = drop.querySelector('.kc-options');
+
+      function getOptions() {
+        return Array.from(sel.options).map(o => ({
+          value: o.value, text: o.text,
+          disabled: o.disabled || (o.value === '' && o.index === 0 && !o.text.trim()),
+          dataset: o.dataset,
+        }));
+      }
+
+      function renderOptions(filter) {
+        const q = (filter || '').toLowerCase();
+        optBox.innerHTML = '';
+        const opts = getOptions();
+        let count = 0;
+        opts.forEach((o, i) => {
+          if (o.disabled && o.value === '') {
+            // placeholder — only show if no filter
+            if (!q) {
+              const div = document.createElement('div');
+              div.className = 'kc-option disabled';
+              div.textContent = o.text || '— select —';
+              optBox.appendChild(div);
+            }
+            return;
+          }
+          if (q && !o.text.toLowerCase().includes(q)) return;
+          const div = document.createElement('div');
+          div.className = 'kc-option' + (o.value === sel.value ? ' selected' : '');
+          div.textContent = o.text;
+          div.dataset.value = o.value;
+          // Copy all data-* attributes from original option
+          if (o.dataset) Object.keys(o.dataset).forEach(k => div.dataset[k] = o.dataset[k]);
+          div.addEventListener('mousedown', e => {
+            e.preventDefault();
+            sel.value = o.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            close();
+          });
+          optBox.appendChild(div);
+          count++;
+        });
+        if (count === 0 && q) {
+          const d = document.createElement('div');
+          d.className = 'kc-no-results';
+          d.textContent = 'No results found';
+          optBox.appendChild(d);
+        }
+      }
+
+      function syncLabel() {
+        const cur = sel.options[sel.selectedIndex];
+        label.textContent = cur ? cur.text : '— select —';
+        label.style.color = (!cur || cur.value === '') ? '#9ca3af' : '';
+      }
+
+      function open() {
+        // Flip above/below based on space
+        const rect = wrap.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        drop.classList.toggle('above', spaceBelow < 260);
+        drop.classList.add('open');
+        btn.classList.add('open');
+        renderOptions('');
+        search.value = '';
+        search.focus();
+      }
+
+      function close() {
+        drop.classList.remove('open');
+        btn.classList.remove('open');
+        syncLabel();
+      }
+
+      btn.addEventListener('click', () => {
+        const isOpen = drop.classList.contains('open');
+        // Close all other dropdowns first
+        document.querySelectorAll('.kc-select-dropdown.open').forEach(d => {
+          d.classList.remove('open');
+          d.closest('.kc-select-wrapper')?.querySelector('.kc-select-display')?.classList.remove('open');
+        });
+        if (!isOpen) open();
+      });
+
+      search.addEventListener('input', () => renderOptions(search.value));
+      search.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { close(); btn.focus(); }
+      });
+
+      document.addEventListener('click', e => {
+        if (!wrap.contains(e.target)) close();
+      });
+
+      // Keep label in sync if something changes the <select> value from JS
+      sel.addEventListener('change', syncLabel);
+
+      syncLabel();
+    }
+
+    function upgradeAll() {
+      document.querySelectorAll('select').forEach(buildSearchable);
+    }
+
+    // Run on DOM ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', upgradeAll);
+    } else {
+      upgradeAll();
+    }
+
+    // Also catch selects added dynamically (e.g. admin tabs)
+    new MutationObserver(() => upgradeAll())
+      .observe(document.body, { childList: true, subtree: true });
+
+    // Expose globally so pages can trigger a re-scan after dynamic changes
+    window.kcUpgradeSelects = upgradeAll;
+  })();
+  </script>
 </body>
 </html>

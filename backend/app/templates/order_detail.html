@@ -28,9 +28,32 @@
     <span class="font-medium">{{ salesperson_name }}</span>
   </div>
   <div class="flex justify-between">
-    <span class="text-gray-500">Date</span>
+    <span class="text-gray-500">Order Date</span>
     <span class="font-medium">{{ order.created_at | string | truncate(10, true, '') }}</span>
   </div>
+  {% if order.delivery_date %}
+  <div class="flex justify-between">
+    <span class="text-gray-500">Delivery Date</span>
+    <span class="font-semibold text-brand">{{ order.delivery_date | string | truncate(10, true, '') }}</span>
+  </div>
+  {% else %}
+  <div class="flex justify-between">
+    <span class="text-gray-500">Delivery Date</span>
+    <span class="text-amber-500 text-xs font-medium">Not set</span>
+  </div>
+  {% endif %}
+  {% if order.transport %}
+  <div class="flex justify-between">
+    <span class="text-gray-500">Transport</span>
+    <span class="font-medium text-sm">{{ order.transport }}</span>
+  </div>
+  {% endif %}
+  {% if order.order_notes %}
+  <div class="flex justify-between items-start gap-4">
+    <span class="text-gray-500 shrink-0">Notes</span>
+    <span class="font-medium text-right text-sm">{{ order.order_notes }}</span>
+  </div>
+  {% endif %}
   {% if order.approved_at %}
   <div class="flex justify-between">
     <span class="text-gray-500" data-i18n="approve_btn">Approved</span>
@@ -54,15 +77,27 @@
 <!-- Line items -->
 <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 mb-4">
   {% for line in lines %}
-  <div class="px-4 py-3 flex justify-between items-center text-sm">
-    <div>
-      <div class="font-medium">{{ line.product_name }}</div>
-      <div class="text-gray-500 text-xs">
-        {{ line.quantity }} {{ line.unit }} × RM {{ "%.2f" | format(line.unit_price) }}
-        {% if line.lot_code %} · Lot: {{ line.lot_code }}{% endif %}
+  <div class="px-4 py-3 text-sm">
+    <div class="flex justify-between items-start">
+      <div>
+        <div class="font-medium flex items-center gap-1.5">
+          {{ line.product_name }}
+          {% if line.price_override %}
+          <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">⚠ Price Override</span>
+          {% endif %}
+        </div>
+        <div class="text-gray-500 text-xs mt-0.5">
+          {{ line.quantity }} {{ line.unit }} × RM {{ "%.2f" | format(line.unit_price) }}
+          {% if line.lot_code %} · Lot: {{ line.lot_code }}{% endif %}
+        </div>
+        {% if line.price_override and line.override_reason %}
+        <div class="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          Reason: {{ line.override_reason }}
+        </div>
+        {% endif %}
       </div>
+      <div class="font-semibold text-brand shrink-0 ml-3">RM {{ "%.2f" | format(line.line_total) }}</div>
     </div>
-    <div class="font-semibold text-brand">RM {{ "%.2f" | format(line.line_total) }}</div>
   </div>
   {% endfor %}
   <div class="px-4 py-3 flex justify-between font-bold text-base">
@@ -70,6 +105,25 @@
     <span class="text-brand">RM {{ "%.2f" | format(total) }}</span>
   </div>
 </div>
+
+<!-- Reorder button (for approved or pushed-to-sage orders) -->
+{% if order.status in ('approved', 'pushed_to_sage') %}
+<button onclick="reorderThis()"
+        class="w-full bg-amber-500 text-white font-semibold py-3 rounded-xl hover:bg-amber-600 transition mb-3 flex items-center justify-center gap-2">
+  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+  </svg>
+  Reorder (Clone as New Draft)
+</button>
+{% endif %}
+
+<!-- Delete draft (salesperson or admin, only on draft orders) -->
+{% if order.status == 'draft' %}
+<button onclick="deleteDraft()"
+        class="w-full border border-red-300 text-red-500 font-semibold py-3 rounded-xl hover:bg-red-50 transition mb-3">
+  Delete Draft
+</button>
+{% endif %}
 
 <!-- Admin actions (only shown to admin, only on submitted orders) -->
 {% if role == 'admin' and order.status == 'submitted' %}
@@ -107,12 +161,80 @@
   <span data-i18n="push_sage_btn">Push to Sage</span>
 </button>
 {% endif %}
+
+<!-- Invoice actions (shown once order is pushed to Sage) -->
+{% if order.status == 'pushed_to_sage' %}
+<div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-3">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="text-green-700 font-semibold text-sm">✅ Order pushed to Sage — Invoice ready</span>
+  </div>
+  <div class="flex gap-2">
+    <!-- Download PDF invoice -->
+    <a href="/orders/{{ order.id }}/invoice.pdf"
+       class="flex-1 flex items-center justify-center gap-2 bg-brand text-white font-semibold py-2.5 rounded-xl hover:bg-brand-dark transition text-sm">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a1 1 0 001 1h16a1 1 0 001-1v-3"/>
+      </svg>
+      Download Invoice
+    </a>
+
+    <!-- Send via WhatsApp (only if customer has a WhatsApp number) -->
+    {% if customer_whatsapp %}
+    {% set wa_text = "Dear " ~ customer_name ~ ", please find your invoice " ~ (order.sage_order_ref or "INV-" ~ order.id) ~ " from Keongco Malaysia. Total: RM " ~ "%.2f"|format(total) ~ ". Please download and attach the invoice PDF. Thank you!" %}
+    <a href="https://wa.me/{{ customer_whatsapp }}?text={{ wa_text | urlencode }}"
+       target="_blank"
+       class="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white font-semibold py-2.5 rounded-xl hover:bg-green-700 transition text-sm">
+      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+      </svg>
+      Send via WhatsApp
+    </a>
+    {% else %}
+    <button disabled
+            title="No WhatsApp number on file for this customer"
+            class="flex-1 flex items-center justify-center gap-2 bg-gray-200 text-gray-400 font-semibold py-2.5 rounded-xl cursor-not-allowed text-sm">
+      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+      </svg>
+      No WhatsApp on file
+    </button>
+    {% endif %}
+  </div>
+
+  {% if not customer_whatsapp %}
+  <p class="text-xs text-gray-400 mt-2 text-center">
+    Ask admin to add the customer's WhatsApp number to enable sending.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
 const ORDER_ID = {{ order.id }};
 const ADMIN_ID = {{ admin_id or 'null' }};
+
+async function reorderThis() {
+  if (!confirm('Create a new draft order with the same items? You can edit quantities before submitting.')) return;
+  const r = await fetch(`/orders/${ORDER_ID}/duplicate`, { method: 'POST' });
+  if (r.ok) {
+    const newOrder = await r.json();
+    window.location.href = `/app/orders/${newOrder.id}`;
+  } else {
+    alert((await r.json()).detail || 'Could not duplicate order.');
+  }
+}
+
+async function deleteDraft() {
+  if (!confirm('Delete this draft order? This cannot be undone.')) return;
+  const r = await fetch(`/orders/${ORDER_ID}`, { method: 'DELETE' });
+  if (r.ok) {
+    window.location.href = '/app/orders';
+  } else {
+    alert((await r.json()).detail || 'Could not delete order.');
+  }
+}
 
 async function approveOrder() {
   if (!confirm(t('confirm_approve'))) return;
