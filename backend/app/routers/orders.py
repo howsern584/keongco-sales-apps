@@ -12,7 +12,7 @@ Price rule enforced here: a line's unit_price must fall within the product's
 price_floor..price_ceiling (the range admin sets). On-hold products are blocked.
 
 NOTE: allocation limits (how much each salesperson may sell) and FCFS reservation
-are enforced in Phase 2c — marked with TODO below so we don't forget.
+are enforced in Phase 2c -- marked with TODO below so we don't forget.
 """
 
 from datetime import datetime
@@ -36,13 +36,21 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Customer not found")
 
     salesperson = db.query(models.User).get(payload.salesperson_id)
-    if salesperson is None or salesperson.role != models.UserRole.salesperson:
+    if salesperson is None or salesperson.role == models.UserRole.warehouse:
         raise HTTPException(status_code=400, detail="Invalid salesperson")
+
+    from datetime import datetime as _dt
+    delivery_dt = None
+    if payload.delivery_date:
+        delivery_dt = _dt.combine(payload.delivery_date, _dt.min.time())
 
     order = models.Order(
         customer_id=payload.customer_id,
         salesperson_id=payload.salesperson_id,
         status=models.OrderStatus.draft,
+        delivery_date=delivery_dt,
+        order_notes=payload.order_notes,
+        transport=payload.transport,
     )
     db.add(order)
     db.commit()
@@ -68,16 +76,21 @@ def add_line(order_id: int, line: schemas.LineItemCreate, db: Session = Depends(
     if line.quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
 
-    # Price must be within the admin-set range (if a range is set).
-    if product.price_floor is not None and line.unit_price < product.price_floor:
+    # Price range check -- out-of-range is allowed only when salesperson explicitly
+    # sets price_override=True and provides an override_reason for invoicing to review.
+    out_of_range = (
+        (product.price_floor is not None and line.unit_price < product.price_floor) or
+        (product.price_ceiling is not None and line.unit_price > product.price_ceiling)
+    )
+    if out_of_range and not line.price_override:
         raise HTTPException(
             status_code=400,
-            detail=f"Price {line.unit_price} is below the floor {product.price_floor}",
+            detail="Price is outside the allowed range. Set price_override=true and provide a reason.",
         )
-    if product.price_ceiling is not None and line.unit_price > product.price_ceiling:
+    if out_of_range and not line.override_reason:
         raise HTTPException(
             status_code=400,
-            detail=f"Price {line.unit_price} is above the ceiling {product.price_ceiling}",
+            detail="A reason is required when overriding the price range.",
         )
 
     # If a lot was given, make sure it belongs to this product.
@@ -113,8 +126,35 @@ def add_line(order_id: int, line: schemas.LineItemCreate, db: Session = Depends(
         quantity=line.quantity,
         unit_price=line.unit_price,
         line_total=line.quantity * line.unit_price,
+        price_override=out_of_range,
+        override_reason=line.override_reason if out_of_range else None,
     )
     db.add(new_line)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.patch("/{order_id}/details", response_model=schemas.OrderOut)
+def update_order_details(order_id: int, payload: schemas.OrderDetailsUpdate,
+                         db: Session = Depends(get_db)):
+    """Save delivery date and/or notes on a draft order.
+    Called automatically from the New Order page before the salesperson submits."""
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != models.OrderStatus.draft:
+        raise HTTPException(status_code=400, detail="Only draft orders can be updated")
+
+    if payload.delivery_date is not None:
+        from datetime import datetime
+        order.delivery_date = datetime.combine(payload.delivery_date,
+                                               datetime.min.time())
+    if payload.order_notes is not None:
+        order.order_notes = payload.order_notes
+    if payload.transport is not None:
+        order.transport = payload.transport
+
     db.commit()
     db.refresh(order)
     return order
@@ -132,12 +172,105 @@ def submit_order(order_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Cannot submit an empty order")
 
     # Reserve/deduct stock now that the order is being submitted.
+    print(f"[SUBMIT] Order #{order_id}: {len(order.line_items)} lines, salesperson #{order.salesperson_id}")
     try:
         stock.deduct_on_submit(db, order)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     order.status = models.OrderStatus.submitted
+    print(f"[SUBMIT] Order #{order_id}: committing changes now...")
+    db.commit()
+    print(f"[SUBMIT] Order #{order_id}: commit done, verifying allocation...")
+
+    # Verify: re-read allocations to confirm they persisted
+    for line in order.line_items:
+        product = db.query(models.Product).get(line.product_id)
+        if product.allocation_mode != models.AllocationMode.fcfs:
+            alloc = db.query(models.Allocation).filter(
+                models.Allocation.salesperson_id == order.salesperson_id,
+                models.Allocation.product_id == line.product_id,
+            ).first()
+            if alloc:
+                print(f"[SUBMIT]   VERIFY product #{line.product_id}: "
+                      f"allocated={alloc.allocated_qty} used={alloc.used_qty} remaining={alloc.remaining_qty}")
+            else:
+                print(f"[SUBMIT]   VERIFY product #{line.product_id}: NO ALLOCATION ROW FOUND")
+
+    db.refresh(order)
+    return order
+
+
+@router.delete("/{order_id}")
+def delete_order(order_id: int, db: Session = Depends(get_db)):
+    """Delete a draft order and all its line items. Only drafts can be deleted."""
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != models.OrderStatus.draft:
+        raise HTTPException(status_code=400, detail="Only draft orders can be deleted")
+    # Delete line items first (foreign key), then the order
+    for line in order.line_items:
+        db.delete(line)
+    db.delete(order)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{order_id}/duplicate", response_model=schemas.OrderOut)
+def duplicate_order(order_id: int, db: Session = Depends(get_db)):
+    """Clone an existing order into a new draft with the same customer + line items.
+    The salesperson can then adjust quantities/prices before submitting.
+    Only approved or pushed-to-sage orders can be duplicated."""
+    original = db.query(models.Order).get(order_id)
+    if original is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if original.status not in (
+        models.OrderStatus.approved,
+        models.OrderStatus.pushed_to_sage,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Only approved or completed orders can be reordered.",
+        )
+
+    # Create a new draft order for the same customer + salesperson
+    new_order = models.Order(
+        customer_id=original.customer_id,
+        salesperson_id=original.salesperson_id,
+        status=models.OrderStatus.draft,
+    )
+    db.add(new_order)
+    db.flush()  # get new_order.id
+
+    # Copy every line item (same products, quantities, prices)
+    for li in original.line_items:
+        new_line = models.OrderLineItem(
+            order_id=new_order.id,
+            product_id=li.product_id,
+            lot_id=li.lot_id,
+            quantity=li.quantity,
+            unit_price=li.unit_price,
+            line_total=li.line_total,
+        )
+        db.add(new_line)
+
+    db.commit()
+    db.refresh(new_order)
+    return new_order
+
+
+@router.patch("/{order_id}/sage-refs", response_model=schemas.OrderOut)
+def update_sage_refs(order_id: int, payload: schemas.SageRefsUpdate,
+                     db: Session = Depends(get_db)):
+    """Admin records the Sage sales order number and/or invoice number after processing in Sage."""
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if payload.sage_order_ref is not None:
+        order.sage_order_ref = payload.sage_order_ref or None
+    if payload.sage_invoice_no is not None:
+        order.sage_invoice_no = payload.sage_invoice_no or None
     db.commit()
     db.refresh(order)
     return order
@@ -151,8 +284,20 @@ def list_orders(db: Session = Depends(get_db)):
 
 @router.get("/{order_id}", response_model=schemas.OrderOut)
 def get_order(order_id: int, db: Session = Depends(get_db)):
-    """View one order with its line items."""
+    """View one order with its line items (includes product_name on each line)."""
     order = db.query(models.Order).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
-    return order
+
+    # Build response manually so we can attach product names
+    order_dict = schemas.OrderOut.from_orm(order).dict()
+    product_ids = [li.product_id for li in order.line_items]
+    products = {
+        p.id: p.description
+        for p in db.query(models.Product).filter(models.Product.id.in_(product_ids)).all()
+    } if product_ids else {}
+
+    for li_dict, li_orm in zip(order_dict["line_items"], order.line_items):
+        li_dict["product_name"] = products.get(li_orm.product_id, f"Product #{li_orm.product_id}")
+
+    return order_dict

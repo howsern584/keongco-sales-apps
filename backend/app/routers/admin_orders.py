@@ -42,7 +42,7 @@ def list_pending_orders(db: Session = Depends(get_db)):
 
 @router.get("/all", response_model=List[schemas.OrderOut])
 def list_all_orders(db: Session = Depends(get_db)):
-    """Every order regardless of status — for the admin overview."""
+    """Every order regardless of status -- for the admin overview."""
     return (
         db.query(models.Order)
         .order_by(models.Order.created_at.desc())
@@ -129,18 +129,79 @@ def push_to_sage(order_id: int, admin_id: int, db: Session = Depends(get_db)):
         }
         for li in order.line_items
     ]
+    # The SC number is our reference key — Sage will store this so we can trace back.
+    sc_ref = f"SC{order.id:06d}"
+
     print("=== [MOCK] Push to Sage 300 ===")
-    print(f"  Customer:  {customer.sage_customer_code} — {customer.name}")
-    print(f"  Order id:  {order.id}")
+    print(f"  Customer:        {customer.sage_customer_code} -- {customer.name}")
+    print(f"  SC Reference:    {sc_ref}   <-- stored in Sage Customer PO / Reference field")
     for l in lines_summary:
         print(f"  Line: {l['sage_item_code']}  qty={l['quantity']}  "
               f"price={l['unit_price']}  total={l['line_total']}")
-    print("=== [MOCK] Would write order to Sage here — Phase 3 will make this real ===")
+    print("=== [MOCK] Phase 3 will send sc_ref to Sage SDK here ===")
     # --- end of placeholder ---
+    # Phase 3: call Sage .NET SDK, pass sc_ref as the customer PO / reference field.
+    # Sage carries this ref through SO → Shipment → Invoice so we can query it back.
 
-    # Give the order a fake Sage reference number for now.
-    order.sage_order_ref = f"MOCK-{order.id:05d}"
     order.status = models.OrderStatus.pushed_to_sage
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post("/{order_id}/sync-from-sage", response_model=schemas.OrderOut)
+def sync_from_sage(order_id: int, db: Session = Depends(get_db)):
+    """
+    Query Sage 300 for this order's sales order number and invoice number,
+    using the SC reference number (SC000001) that was sent to Sage on push.
+
+    Phase 2 STUB: returns simulated values so the UI is fully wired.
+    Phase 3: replace the stub block with a real read-only Sage DB query:
+        SELECT ORDNUMBER, INVNUMBER
+        FROM   OE_ORDER_HEADER / AR_INVOICES (exact table depends on Sage version)
+        WHERE  PONUMBER = :sc_ref   -- the field we stored our SC number in
+    """
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != models.OrderStatus.pushed_to_sage:
+        raise HTTPException(status_code=400, detail="Order has not been pushed to Sage yet")
+
+    sc_ref = f"SC{order.id:06d}"
+
+    # --- PHASE 3 TODO: replace this stub with real Sage DB read ---
+    # Example (pyodbc / direct SQL against Sage SQL Server):
+    #
+    # import pyodbc
+    # conn = pyodbc.connect(SAGE_CONN_STR)
+    # cur  = conn.cursor()
+    # cur.execute("""
+    #     SELECT oh.ORDNUMBER, inv.INVNUMBER
+    #     FROM   OESHDT oh
+    #     LEFT JOIN ARINVH inv ON inv.PONUMBER = oh.PONUMBER
+    #     WHERE  oh.PONUMBER = ?
+    # """, sc_ref)
+    # row = cur.fetchone()
+    # sage_order_ref  = row.ORDNUMBER  if row else None
+    # sage_invoice_no = row.INVNUMBER  if row else None
+    # conn.close()
+    #
+    # Exact table/column names depend on Sage 300 2024 schema — confirm before Phase 3.
+    # -----------------------------------------------------------------------
+
+    # Stub: simulate what Sage would return (remove in Phase 3)
+    import re
+    existing_so  = order.sage_order_ref
+    existing_inv = order.sage_invoice_no
+    stub_so  = existing_so  or f"SO-{order.id:06d}"
+    stub_inv = existing_inv or f"INV-{order.id:06d}"
+    print(f"[STUB] sync-from-sage for {sc_ref}: would return SO={stub_so}, INV={stub_inv}")
+    sage_order_ref  = stub_so
+    sage_invoice_no = stub_inv
+    # --- end stub ---
+
+    order.sage_order_ref  = sage_order_ref
+    order.sage_invoice_no = sage_invoice_no
     db.commit()
     db.refresh(order)
     return order

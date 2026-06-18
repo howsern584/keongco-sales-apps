@@ -1,7 +1,7 @@
 """
 photos.py
 ---------
-Quality photo management — two sides:
+Quality photo management -- two sides:
 
   Warehouse staff:
     POST /lots/{lot_id}/photos   -> upload a photo for a lot
@@ -41,7 +41,7 @@ def _ensure_upload_dir():
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-# ----- Schema for photo responses (inline here — small enough) ---------------
+# ----- Schema for photo responses (inline here -- small enough) ---------------
 
 from pydantic import BaseModel
 
@@ -132,7 +132,7 @@ def list_photos(lot_id: int, db: Session = Depends(get_db)):
 
 @router.get("/lots/{lot_id}/photos/latest", response_model=PhotoOut)
 def latest_photo(lot_id: int, db: Session = Depends(get_db)):
-    """The single most recent photo for a lot — what a salesperson sees at a glance."""
+    """The single most recent photo for a lot -- what a salesperson sees at a glance."""
     lot = db.query(models.Lot).get(lot_id)
     if lot is None:
         raise HTTPException(status_code=404, detail="Lot not found")

@@ -8,3 +8,5 @@ pydantic==2.13.4          # checks/validates data shapes
 python-dotenv==1.2.2      # reads settings from the .env file
 python-multipart==0.0.32  # lets the API accept file uploads (photos)
 jinja2==3.1.6             # renders the HTML pages (templates)
+bcrypt==4.3.0             # password hashing (used by users router)
+apscheduler==3.11.0       # background job scheduler (used by scheduler.py)

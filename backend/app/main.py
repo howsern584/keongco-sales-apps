@@ -10,13 +10,24 @@ Then open http://127.0.0.1:8000 in your browser.
 Interactive API docs: http://127.0.0.1:8000/docs
 """
 
+# --- Windows encoding fix (MUST be before all other imports) ----------------
+# Python on Windows defaults to cp1252 for stdout/stderr, which crashes when
+# any library prints Unicode characters (like arrows or box-drawing chars).
+# This forces UTF-8 so print() never fails.
+import sys, io
+if sys.stdout and hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr and hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+# ----------------------------------------------------------------------------
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
 
 from .database import Base, engine
 from . import models  # noqa: F401
-from .routers import catalog, orders, allocations, admin_orders, photos, pages
+from .routers import catalog, orders, allocations, admin_orders, photos, pages, invoices, users, customers, groups
 
 Base.metadata.create_all(bind=engine)
 
@@ -32,6 +43,10 @@ app.include_router(orders.router)
 app.include_router(allocations.router)
 app.include_router(admin_orders.router)
 app.include_router(photos.router)
+app.include_router(invoices.router)
+app.include_router(users.router)
+app.include_router(customers.router)
+app.include_router(groups.router)
 
 # HTML page routes (the screens users see)
 app.include_router(pages.router)
@@ -39,4 +54,4 @@ app.include_router(pages.router)
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "phase": "Phase 2 — core app (no Sage yet)"}
+    return {"status": "ok", "phase": "Phase 2 -- core app (no Sage yet)"}

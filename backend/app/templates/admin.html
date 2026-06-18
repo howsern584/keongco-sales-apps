@@ -1,33 +1,54 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% set show_nav = true %}
 {% set active = "admin" %}
 
 {% block content %}
-<h2 class="text-xl font-bold mb-4" data-i18n="admin_pending">Pending Orders</h2>
+<h2 class="text-xl font-bold mb-4" data-i18n="admin_pending">Admin</h2>
 
 <!-- Tabs -->
-<div class="flex border-b border-gray-200 mb-4">
+<div class="flex overflow-x-auto border-b border-gray-200 mb-4 gap-0">
   <button onclick="showTab('pending')" id="tab-pending"
-          class="px-4 py-2 text-sm font-medium border-b-2 border-brand text-brand">
-    <span data-i18n="admin_pending">Pending</span>
+          class="px-3 py-2 text-sm font-medium border-b-2 border-brand text-brand whitespace-nowrap">
+    Pending
     {% if pending_orders %}
     <span class="ml-1 bg-brand text-white text-xs rounded-full px-1.5 py-0.5">{{ pending_orders | length }}</span>
     {% endif %}
   </button>
   <button onclick="showTab('all')" id="tab-all"
-          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500">
-    <span data-i18n="admin_all">All Orders</span>
+          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
+    All Orders
+  </button>
+  <button onclick="showTab('allocations')" id="tab-allocations"
+          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
+    Allocations
+  </button>
+
+  <button onclick="showTab('prices')" id="tab-prices"
+          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
+    Prices
+  </button>
+  <button onclick="showTab('reports')" id="tab-reports"
+          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
+    Reports
+  </button>
+  <button onclick="showTab('customers')" id="tab-customers"
+          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
+    Customers
+  </button>
+  <button onclick="showTab('users')" id="tab-users"
+          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
+    Users
   </button>
   {% if stock_alerts %}
   <button onclick="showTab('alerts')" id="tab-alerts"
-          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500">
+          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
     Alerts
     <span class="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{{ stock_alerts | length }}</span>
   </button>
   {% endif %}
 </div>
 
-<!-- Pending orders tab -->
+<!-- â”€â”€ Pending orders â”€â”€ -->
 <div id="pane-pending">
   {% if pending_orders %}
   <div class="space-y-3">
@@ -35,7 +56,7 @@
     <a href="/app/orders/{{ order.id }}"
        class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
       <div class="flex items-center justify-between mb-1">
-        <span class="font-semibold"># {{ order.id }} — {{ order.customer_name }}</span>
+        <span class="font-semibold">#{{ order.id | order_no }} â€” {{ order.customer_name }}</span>
         <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-submitted">Submitted</span>
       </div>
       <div class="text-sm text-gray-500 flex justify-between">
@@ -51,18 +72,18 @@
     <svg class="w-14 h-14 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
     </svg>
-    <p class="text-sm">No pending orders — all clear!</p>
+    <p class="text-sm">No pending orders â€” all clear!</p>
   </div>
   {% endif %}
 </div>
 
-<!-- All orders tab -->
+<!-- â”€â”€ All orders â”€â”€ -->
 <div id="pane-all" class="hidden space-y-3">
   {% for order in all_orders %}
   <a href="/app/orders/{{ order.id }}"
      class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
     <div class="flex items-center justify-between mb-1">
-      <span class="font-semibold"># {{ order.id }} — {{ order.customer_name }}</span>
+      <span class="font-semibold"># {{ order.id }} â€” {{ order.customer_name }}</span>
       <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">
         {{ order.status | replace('_',' ') | title }}
       </span>
@@ -78,17 +99,229 @@
   {% endfor %}
 </div>
 
-<!-- Alerts tab -->
+<!-- â”€â”€ Allocations tab â”€â”€ -->
+<div id="pane-allocations" class="hidden">
+  <div id="alloc-tab-loading" class="py-16 text-center text-gray-400 text-sm">Loading allocationsâ€¦</div>
+  <div id="alloc-tab-content" class="hidden"><!-- injected by loadAllocations() --></div>
+</div>
+
+
+
+
+<!-- â”€â”€ Prices tab â”€â”€ -->
+<div id="pane-prices" class="hidden space-y-3">
+
+  {# Category display order and friendly labels #}
+  {% set cat_order = ['on','sh','gi','po','ga','co','pa','be','sp','dc'] %}
+  {% set cat_labels = {
+    'on': 'ON â€” Bawang Besar (Onion)',
+    'sh': 'SH â€” Bawang Merah (Shallot)',
+    'gi': 'GI â€” Halia (Ginger)',
+    'po': 'PO â€” Kentang (Potato)',
+    'ga': 'GA â€” Bawang Putih (Garlic)',
+    'co': 'CO â€” Gula (Sugar)',
+    'pa': 'PA â€” Suun (Vermicelli)',
+    'be': 'BE â€” Kacang (Beans)',
+    'sp': 'SP â€” Rempah (Spices)',
+    'dc': 'DC â€” Cili (Chili)'
+  } %}
+
+  {% for cat in cat_order %}
+    {# Collect products in this category #}
+    {% set ns = namespace(items=[]) %}
+    {% for p in products %}
+      {% if p.sage_item_code[:2].lower() == cat %}
+        {% set ns.items = ns.items + [p] %}
+      {% endif %}
+    {% endfor %}
+
+    {% if ns.items %}
+    <div>
+      <div class="text-xs font-bold text-gray-400 uppercase tracking-wider px-1 mb-1">
+        {{ cat_labels.get(cat, cat.upper()) }}
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
+        {% for p in ns.items %}
+        {% set prev = prev_price_map.get(p.id) %}
+        <div class="flex items-center px-3 py-2.5 gap-2 cursor-pointer active:bg-gray-50"
+             data-remark="{{ p.remark | e if p.remark else '' }}"
+             onclick="openPriceModal({{ p.id }}, '{{ p.description | replace("'","\\'")|e }}', {{ p.base_price }}, {{ p.price_floor if p.price_floor else 'null' }}, {{ p.price_ceiling if p.price_ceiling else 'null' }}, {{ p.special_price if p.special_price else 'null' }}, this)">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-gray-800 leading-snug truncate">{{ p.description }}</div>
+            {% if p.remark %}
+            <div class="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded mt-0.5 inline-block">{{ p.remark }}</div>
+            {% endif %}
+            <div class="flex items-center gap-1 mt-0.5 flex-wrap">
+              {% if p.price_ceiling %}
+              <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_ceiling) }}</span>
+              <span class="text-xs text-gray-300">â€“</span>
+              {% endif %}
+              <span class="text-sm font-bold {% if p.base_price == 0 %}text-red-500{% else %}text-brand{% endif %}">
+                RM {{ "%.2f"|format(p.base_price) }}
+              </span>
+              {% if p.price_floor %}
+              <span class="text-xs text-gray-300">â€“</span>
+              <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_floor) }}</span>
+              {% endif %}
+              {% if prev is not none and p.base_price != prev %}
+                {% if p.base_price > prev %}
+                <span class="text-xs font-semibold text-green-600 ml-1">â†‘</span>
+                {% else %}
+                <span class="text-xs font-semibold text-red-500 ml-1">â†“</span>
+                {% endif %}
+              {% endif %}
+              {% if p.special_price %}
+              <span class="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full ml-1">â˜… RM {{ "%.2f"|format(p.special_price) }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+          </svg>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  {# Catch-all: products whose category prefix isn't in the list above #}
+  {% set ns_other = namespace(items=[]) %}
+  {% for p in products %}
+    {% if p.sage_item_code[:2].lower() not in cat_order %}
+      {% set ns_other.items = ns_other.items + [p] %}
+    {% endif %}
+  {% endfor %}
+  {% if ns_other.items %}
+  <div>
+    <div class="text-xs font-bold text-gray-400 uppercase tracking-wider px-1 mb-1">Other</div>
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
+      {% for p in ns_other.items %}
+      {% set prev = prev_price_map.get(p.id) %}
+      <div class="flex items-center px-3 py-2.5 gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium text-gray-800 leading-snug truncate">{{ p.description }}</div>
+          {% if p.remark %}
+          <div class="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded mt-0.5 inline-block">{{ p.remark }}</div>
+          {% endif %}
+          <div class="flex items-center gap-1 mt-0.5 flex-wrap">
+            {% if p.price_ceiling %}
+            <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_ceiling) }}</span>
+            <span class="text-xs text-gray-300">â€“</span>
+            {% endif %}
+            <span class="text-sm font-bold {% if p.base_price == 0 %}text-red-500{% else %}text-brand{% endif %}">
+              RM {{ "%.2f"|format(p.base_price) }}
+            </span>
+            {% if p.price_floor %}
+            <span class="text-xs text-gray-300">â€“</span>
+            <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_floor) }}</span>
+            {% endif %}
+            {% if prev is not none and p.base_price != prev %}
+              {% if p.base_price > prev %}<span class="text-xs font-semibold text-green-600 ml-1">â†‘</span>
+              {% else %}<span class="text-xs font-semibold text-red-500 ml-1">â†“</span>{% endif %}
+            {% endif %}
+            {% if p.special_price %}
+            <span class="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full ml-1">â˜… RM {{ "%.2f"|format(p.special_price) }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <button data-remark="{{ p.remark | e if p.remark else '' }}" onclick="openPriceModal({{ p.id }}, '{{ p.description | replace("'","\\'")|e }}', {{ p.base_price }}, {{ p.price_floor if p.price_floor else 'null' }}, {{ p.price_ceiling if p.price_ceiling else 'null' }}, {{ p.special_price if p.special_price else 'null' }}, this)"
+                class="shrink-0 text-xs bg-brand text-white px-2.5 py-1.5 rounded-lg font-medium">
+          Edit
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Price edit modal -->
+<div id="price-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-end justify-center">
+  <div class="bg-white w-full max-w-lg rounded-t-2xl p-5 pb-8">
+    <h3 class="font-bold text-gray-800 mb-1">Edit Price</h3>
+    <p id="price-modal-name" class="text-sm text-gray-500 mb-4"></p>
+    <input type="hidden" id="price-modal-id"/>
+    <div class="space-y-3">
+
+      <!-- Three price columns: Min | Base | Max -->
+      <div class="flex gap-2">
+        <div class="flex-1 text-center">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Min (RM)</label>
+          <input id="price-modal-floor" type="number" step="0.01" min="0" placeholder="â€”"
+                 class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand"/>
+          <p class="text-xs text-gray-400 mt-0.5">Floor</p>
+        </div>
+        <div class="flex-1 text-center">
+          <label class="block text-xs font-semibold text-brand mb-1">Base (RM) â˜…</label>
+          <input id="price-modal-base" type="number" step="0.01" min="0" placeholder="0.00"
+                 class="w-full border-2 border-brand rounded-lg px-2 py-2 text-base text-center font-bold focus:outline-none focus:ring-2 focus:ring-brand"/>
+          <p class="text-xs text-gray-400 mt-0.5">Standard</p>
+        </div>
+        <div class="flex-1 text-center">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Max (RM)</label>
+          <input id="price-modal-ceiling" type="number" step="0.01" min="0" placeholder="â€”"
+                 class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand"/>
+          <p class="text-xs text-gray-400 mt-0.5">Ceiling</p>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div class="border-t border-gray-100 pt-2">
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          Special / Discount Price (RM)
+          <span class="font-normal text-gray-400 ml-1">â€” leave blank if not applicable</span>
+        </label>
+        <div class="flex gap-2 items-center">
+          <input id="price-modal-special" type="number" step="0.01" min="0" placeholder="e.g. 45.00"
+                 class="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-amber-50"/>
+          <span class="text-xs text-gray-400 shrink-0">per unit</span>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Salesperson sees this as an alternative price option when entering orders.</p>
+      </div>
+
+      <!-- Remark / Brand / Marking notes -->
+      <div class="border-t border-gray-100 pt-2">
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          Remark
+          <span class="font-normal text-gray-400 ml-1">â€” brand, marking, packaging note (optional)</span>
+        </label>
+        <input id="price-modal-remark" type="text" placeholder="e.g. Thailand origin, Jumbo grade"
+               class="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-indigo-50"/>
+      </div>
+
+      <div id="price-modal-msg" class="hidden text-sm text-center rounded-lg py-2"></div>
+      <div class="flex gap-3 pt-1">
+        <button onclick="closePriceModal()"
+                class="flex-1 border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl">Cancel</button>
+        <button onclick="savePriceModal()"
+                class="flex-1 bg-brand text-white font-semibold py-3 rounded-xl">Save Price</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- â”€â”€ Alerts tab â”€â”€ -->
 {% if stock_alerts %}
 <div id="pane-alerts" class="hidden space-y-3">
   {% for alert in stock_alerts %}
-  <div class="bg-white rounded-xl border border-red-200 px-4 py-3">
+  <div id="alert-{{ alert.id }}" class="bg-white rounded-xl border border-red-200 px-4 py-3">
     <div class="flex justify-between items-start mb-1">
       <span class="font-semibold text-red-700">{{ alert.salesperson_name }}</span>
-      <span class="text-xs text-gray-400">{{ alert.triggered_at[:10] }}</span>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-400">{{ alert.triggered_at[:10] }}</span>
+        <button onclick="dismissAlert({{ alert.id }})"
+                class="text-gray-400 hover:text-red-500 transition"
+                title="Dismiss alert">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <p class="text-sm text-gray-600">Hit limit for <span class="font-medium">{{ alert.product_name }}</span></p>
-    <button onclick="topUp({{ alert.salesperson_id }}, {{ alert.product_id }}, '{{ alert.product_name }}')"
+    <button onclick="prefillAlloc({{ alert.salesperson_id }}, {{ alert.product_id }}, '')"
             class="mt-2 text-xs bg-brand text-white px-3 py-1 rounded-lg">
       Top Up Allocation
     </button>
@@ -97,32 +330,244 @@
 </div>
 {% endif %}
 
-<!-- Top-up modal -->
-<div id="topup-modal" class="hidden fixed inset-0 bg-black/40 flex items-end z-50">
-  <div class="bg-white w-full max-w-lg mx-auto rounded-t-2xl p-5 space-y-4">
-    <h3 class="font-bold text-lg">Top Up Allocation</h3>
-    <p id="topup-desc" class="text-sm text-gray-600"></p>
-    <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1" data-i18n="alloc_limit">New Total Limit</label>
-      <input id="topup-qty" type="number" min="1" placeholder="e.g. 1000"
-             class="w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-brand"/>
+<!-- Reports pane -->
+<div id="pane-reports" class="hidden space-y-4">
+  <div id="reports-loading" class="py-12 text-center text-gray-400 text-sm">Loading reportsâ€¦</div>
+  <div id="reports-content" class="hidden space-y-4">
+    <!-- KPI cards -->
+    <div class="grid grid-cols-3 gap-3">
+      <div class="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
+        <div id="rpt-revenue" class="text-2xl font-bold text-brand">â€”</div>
+        <div class="text-xs text-gray-500 mt-1">Total Revenue</div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
+        <div id="rpt-completed" class="text-2xl font-bold text-blue-600">â€”</div>
+        <div class="text-xs text-gray-500 mt-1">Completed Orders</div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
+        <div id="rpt-pending" class="text-2xl font-bold text-amber-600">â€”</div>
+        <div class="text-xs text-gray-500 mt-1">Pending Review</div>
+      </div>
     </div>
-    <div class="flex gap-3">
-      <button onclick="closeTopUp()"
-              class="flex-1 border border-gray-300 text-gray-600 py-3 rounded-lg" data-i18n="btn_cancel">Cancel</button>
-      <button onclick="submitTopUp()"
-              class="flex-1 bg-brand text-white font-semibold py-3 rounded-lg" data-i18n="btn_confirm">Confirm</button>
+    <!-- Sales by SP -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+      <h3 class="text-sm font-bold text-gray-700 mb-3">Sales by Salesperson</h3>
+      <div id="rpt-sp" class="space-y-3"></div>
+    </div>
+    <!-- Top products -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+      <h3 class="text-sm font-bold text-gray-700 mb-3">Top Products by Volume</h3>
+      <div id="rpt-products" class="divide-y divide-gray-50"></div>
+    </div>
+    <!-- Top customers -->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+      <h3 class="text-sm font-bold text-gray-700 mb-3">Top Customers by Revenue</h3>
+      <div id="rpt-customers" class="space-y-2.5"></div>
     </div>
   </div>
 </div>
+
+<!-- â”€â”€ Users tab â”€â”€ -->
+<!-- â”€â”€ Customers â”€â”€ -->
+<div id="pane-customers" class="hidden space-y-4">
+
+  <!-- Sync from Sage card -->
+  <div class="bg-purple-50 border border-purple-200 rounded-xl p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <div class="font-semibold text-purple-900 text-sm">Sync Customers from Sage 300</div>
+        <div class="text-xs text-purple-600 mt-1">Pulls customer list and salesperson assignments directly from Sage Accpac. New customers are added; existing ones are updated.</div>
+        <div class="text-xs text-gray-400 mt-1">Phase 3 â€” requires Sage 300 server connection</div>
+      </div>
+      <button onclick="syncCustomersFromSage()" id="sage-sync-btn"
+              class="shrink-0 flex items-center gap-1.5 bg-purple-600 text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-purple-700 transition">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Sync from Sage
+      </button>
+    </div>
+    <div id="sage-sync-result" class="hidden mt-3 text-xs rounded-lg px-3 py-2"></div>
+  </div>
+
+  <!-- Search + customer list -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+    <div class="flex items-center gap-2 mb-3">
+      <input id="cust-search" type="text" placeholder="Search customer nameâ€¦"
+             oninput="filterCustomers(this.value)"
+             class="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+      <select id="cust-sp-filter" onchange="filterCustomers(document.getElementById('cust-search').value)"
+              class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        <option value="">All salespersons</option>
+        {% for u in salesperson_users %}
+        <option value="{{ u.id }}">{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div id="cust-list" class="divide-y divide-gray-50 text-sm max-h-[60vh] overflow-y-auto">
+      <div class="py-6 text-center text-gray-400 text-xs">Search or select a salesperson to view customers.</div>
+    </div>
+  </div>
+</div>
+
+<div id="pane-users" class="hidden space-y-4">
+
+  <!-- Add New User form -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+    <h3 class="font-semibold text-gray-800 mb-3">Add New User</h3>
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Full Name</label>
+        <input id="new-user-name" type="text" placeholder="e.g. Ravi (Sales)"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Login ID (username)</label>
+        <input id="new-user-login" type="text" placeholder="e.g. ravi"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Role</label>
+        <select id="new-user-role"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+          <option value="salesperson">Salesperson</option>
+          <option value="admin">Admin</option>
+          <option value="warehouse">Warehouse</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Initial Password</label>
+        <input id="new-user-password" type="password" placeholder="Min. 4 characters"
+               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+        <p class="text-xs text-gray-400 mt-1">The user should change this after first login.</p>
+      </div>
+      <div id="new-user-msg" class="hidden text-sm text-center rounded-lg py-2"></div>
+      <button onclick="createUser()"
+              class="w-full bg-brand text-white font-semibold py-2.5 rounded-xl hover:bg-brand-dark transition text-sm">
+        Create User
+      </button>
+    </div>
+  </div>
+
+  <!-- Groups -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-gray-800 text-sm">Salesperson Groups</h3>
+      <div class="flex gap-2">
+        <input id="new-group-name" type="text" placeholder="Group name"
+               class="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand w-32"/>
+        <button onclick="createGroup()"
+                class="text-xs font-semibold px-2 py-1 bg-brand text-white rounded-lg">+ Add</button>
+      </div>
+    </div>
+    <div id="group-list" class="space-y-2">
+      {% if all_groups %}
+        {% for g in all_groups %}
+        <div class="border border-gray-100 rounded-lg px-3 py-2" id="group-row-{{ g.id }}">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-sm font-medium text-gray-700">{{ g.name }}</span>
+            <button onclick="deleteGroup({{ g.id }}, '{{ g.name }}')"
+                    class="text-xs text-red-400 hover:text-red-600">Delete</button>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            {% set members = group_members.get(g.id, []) %}
+            {% for m in members %}
+            <span class="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{{ m.name.split(' ')[0] }}</span>
+            {% else %}
+            <span class="text-xs text-gray-400 italic">No members yet</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-xs text-gray-400 text-center py-2">No groups yet. Add one above.</p>
+      {% endif %}
+    </div>
+    <p class="text-xs text-gray-400 mt-2">Assign users to groups in the user list below. Each user can only be in one group.</p>
+  </div>
+
+  <!-- User list -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100">
+    <div class="px-4 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+      All Users
+    </div>
+    <div id="user-list-body">
+      <!-- Loaded dynamically via JS -->
+      <div class="px-4 py-4 text-sm text-gray-400 text-center">Loading...</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Reset Password Modal -->
+<div id="reset-pw-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3">
+    <h3 class="font-bold text-gray-800">Reset Password</h3>
+    <p class="text-sm text-gray-500">Setting new password for: <strong id="reset-pw-name"></strong></p>
+    <input id="reset-pw-value" type="password" placeholder="New password (min. 4 chars)"
+           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+    <div id="reset-pw-msg" class="hidden text-sm text-center rounded-lg py-2"></div>
+    <div class="flex gap-2">
+      <button onclick="closeResetPw()"
+              class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancel</button>
+      <button onclick="doResetPw()"
+              class="flex-1 bg-brand text-white font-semibold py-2 rounded-lg text-sm">Save</button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-let topUpTarget = null;
+// â”€â”€ Allocation data â€” populated by loadAllocations() fragment's <script> â”€â”€â”€â”€â”€â”€
+let ALLOC_SALESPEOPLE = [];
+let ALLOC_MAP = {};
+let POOL_MAP  = {};
+const PRODUCT_NAMES = {
+  {% for p in products %}{{ p.id }}: { name: {{ p.description | tojson }}, unit: {{ p.unit.value | tojson }}, remark: {{ p.remark | tojson if p.remark else 'null' }} },
+  {% endfor %}
+};
+
+function toggleCat(key) {
+  const body = document.getElementById(`cat-body-${key}`);
+  const chev = document.getElementById(`cat-chev-${key}`);
+  const open = !body.classList.contains('hidden');
+  body.classList.toggle('hidden', open);
+  chev.style.transform = open ? 'rotate(-90deg)' : '';
+}
+
+function toggleAllocDetail(productId) {
+  const panel = document.getElementById(`alloc-detail-${productId}`);
+  const chev = document.getElementById(`alloc-chev-${productId}`);
+  const open = !panel.classList.contains('hidden');
+  panel.classList.toggle('hidden', open);
+  chev.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+async function saveInlineAlloc(btn, spId, productId) {
+  const input = btn.previousElementSibling;
+  const qty = parseInt(input.value);
+  if (isNaN(qty) || qty < 0) { alert('Enter a valid quantity.'); return; }
+  btn.textContent = 'â€¦';
+  const r = await fetch('/admin/allocations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ salesperson_id: spId, product_id: productId, allocated_qty: qty }),
+  });
+  if (r.ok) {
+    btn.textContent = 'âœ“';
+    showAllocMsg(`âœ“ Saved`, true);
+    setTimeout(() => location.reload(), 600);
+  } else {
+    btn.textContent = 'âœ—';
+    const err = await r.json();
+    showAllocMsg(err.detail || 'Failed', false);
+  }
+}
 
 function showTab(name) {
-  ['pending','all','alerts'].forEach(t => {
+  ['pending','all','allocations','prices','reports','customers','users','alerts'].forEach(t => {
     const pane = document.getElementById(`pane-${t}`);
     const tab  = document.getElementById(`tab-${t}`);
     if (!pane || !tab) return;
@@ -136,31 +581,739 @@ function showTab(name) {
       tab.classList.add('border-transparent','text-gray-500');
     }
   });
+  history.replaceState(null, '', '#' + name);
+  // Lazy-load tabs that are expensive to compute server-side
+  if (name === 'allocations') loadAllocations();
+  if (name === 'reports')  loadReports();
+  if (name === 'customers' && _allCustomers.length === 0) loadCustomers();
+  if (name === 'users')    loadUsers();
 }
 
-function topUp(salespersonId, productId, productName) {
-  topUpTarget = { salespersonId, productId };
-  document.getElementById('topup-desc').textContent =
-    `Set new total allocation for "${productName}"`;
-  document.getElementById('topup-qty').value = '';
-  document.getElementById('topup-modal').classList.remove('hidden');
+// â”€â”€ Allocations tab (lazy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let _allocLoaded = false;
+async function loadAllocations() {
+  if (_allocLoaded) return;
+  const r = await fetch('/admin/tab/allocations');
+  if (!r.ok) return;
+  const html = await r.text();
+  _allocLoaded = true;
+  document.getElementById('alloc-tab-loading').classList.add('hidden');
+  const content = document.getElementById('alloc-tab-content');
+  content.innerHTML = html;
+  content.classList.remove('hidden');
 }
-function closeTopUp() {
-  document.getElementById('topup-modal').classList.add('hidden');
-  topUpTarget = null;
+
+// â”€â”€ Reports tab (lazy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let _reportsLoaded = false;
+async function loadReports() {
+  if (_reportsLoaded) return;
+  const r = await fetch('/admin/reports-data');
+  if (!r.ok) return;
+  const d = await r.json();
+  _reportsLoaded = true;
+
+  document.getElementById('rpt-revenue').textContent   = 'RM ' + Math.round(d.total_revenue).toLocaleString();
+  document.getElementById('rpt-completed').textContent = d.total_completed;
+  document.getElementById('rpt-pending').textContent   = d.total_pending;
+
+  const maxRm = d.sales_by_sp[0]?.total_rm || 1;
+  document.getElementById('rpt-sp').innerHTML = d.sales_by_sp.length ? d.sales_by_sp.map(s => `
+    <div>
+      <div class="flex justify-between text-sm mb-1">
+        <span class="font-medium">${s.name}</span>
+        <span class="text-brand font-semibold">RM ${s.total_rm.toFixed(2)}</span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-3">
+        <div class="bg-brand rounded-full h-3" style="width:${Math.round(s.total_rm/maxRm*100)}%"></div>
+      </div>
+      <div class="flex justify-between text-xs text-gray-400 mt-0.5">
+        <span>${s.order_count} orders</span><span>${s.item_count} items</span>
+      </div>
+    </div>`).join('') : '<p class="text-sm text-gray-400">No completed orders yet.</p>';
+
+  document.getElementById('rpt-products').innerHTML = d.top_products.length ? d.top_products.map(p => `
+    <div class="flex justify-between py-2 text-sm">
+      <div><span class="font-medium">${p.name}</span><span class="text-xs text-gray-400 ml-1">(${p.unit})</span></div>
+      <div class="text-right shrink-0 ml-3">
+        <span class="font-bold text-purple-600">${p.total_qty}</span>
+        <span class="text-xs text-gray-400 block">RM ${Math.round(p.total_rm)}</span>
+      </div>
+    </div>`).join('') : '<p class="text-sm text-gray-400">No product data yet.</p>';
+
+  const maxCust = d.top_customers[0]?.total_rm || 1;
+  document.getElementById('rpt-customers').innerHTML = d.top_customers.length ? d.top_customers.map(c => `
+    <div>
+      <div class="flex justify-between text-sm mb-0.5">
+        <span class="font-medium">${c.name}</span>
+        <span class="text-blue-600 font-semibold">RM ${c.total_rm.toFixed(2)}</span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-2">
+        <div class="bg-blue-500 rounded-full h-2" style="width:${Math.round(c.total_rm/maxCust*100)}%"></div>
+      </div>
+      <div class="text-xs text-gray-400 mt-0.5">${c.order_count} orders</div>
+    </div>`).join('') : '<p class="text-sm text-gray-400">No customer data yet.</p>';
+
+  document.getElementById('reports-loading').classList.add('hidden');
+  document.getElementById('reports-content').classList.remove('hidden');
 }
-async function submitTopUp() {
-  const qty = parseInt(document.getElementById('topup-qty').value);
-  if (!qty || qty < 1) { alert('Please enter a valid quantity.'); return; }
-  const r = await fetch('/admin/allocations', {
+
+// On load, restore the tab from the URL hash
+(function() {
+  const hash = window.location.hash.replace('#','');
+  const valid = ['pending','all','allocations','prices','reports','customers','users','alerts'];
+  showTab(valid.includes(hash) ? hash : 'pending');
+})();
+
+// â”€â”€ Allocation mode toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let _allocMode = 'individual';
+
+function setAllocMode(mode) {
+  _allocMode = mode;
+  const isIndividual = mode === 'individual';
+  document.getElementById('alloc-individual-fields').classList.toggle('hidden', !isIndividual);
+  document.getElementById('alloc-pool-fields').classList.toggle('hidden', isIndividual);
+  document.getElementById('mode-btn-individual').className =
+    `flex-1 py-2 text-sm font-semibold transition ${isIndividual ? 'bg-brand text-white' : 'bg-white text-gray-500'}`;
+  document.getElementById('mode-btn-pool').className =
+    `flex-1 py-2 text-sm font-semibold transition ${!isIndividual ? 'bg-purple-600 text-white' : 'bg-white text-gray-500'}`;
+  document.getElementById('alloc-qty-label').textContent =
+    isIndividual ? 'New Total Qty' : 'New Pool Total Qty';
+  document.getElementById('alloc-unit-label').textContent = '';
+  document.getElementById('alloc-qty').value = '';
+  document.getElementById('alloc-msg').classList.add('hidden');
+}
+
+function onAllocProductChange() {
+  const opt = document.getElementById('alloc-product').options[
+    document.getElementById('alloc-product').selectedIndex];
+  const unit = opt.dataset.unit || '';
+  const mode = opt.dataset.mode || '';
+  const pid  = parseInt(opt.value);
+  document.getElementById('alloc-unit-label').textContent = unit ? `(${unit})` : '';
+
+  // Warn if this product uses a shared pool
+  if (mode === 'fcfs') {
+    showAllocMsg('This product uses a Shared Pool. Switch to Shared Pool mode to set it.', false);
+  } else {
+    document.getElementById('alloc-msg').classList.add('hidden');
+  }
+
+  // Show stock on hand
+  showStockInfo(pid, 'alloc-stock-info', 'alloc-stock-total', 'alloc-stock-lots', unit);
+}
+
+function showStockInfo(pid, boxId, totalId, lotsId, unit) {
+  const box = document.getElementById(boxId);
+  if (!pid || !STOCK_DATA[pid]) { box.classList.add('hidden'); return; }
+  const s = STOCK_DATA[pid];
+  const u = unit || s.unit;
+  document.getElementById(totalId).textContent = `${s.total.toLocaleString()} ${u}`;
+  const lotsEl = document.getElementById(lotsId);
+  if (s.lots.length > 1) {
+    lotsEl.innerHTML = s.lots.map(l =>
+      `<div class="flex justify-between"><span>Lot ${l.code}</span><span>${l.qty.toLocaleString()} ${u}</span></div>`
+    ).join('');
+    lotsEl.classList.remove('hidden');
+  } else {
+    lotsEl.innerHTML = '';
+  }
+  box.classList.remove('hidden');
+}
+
+// Pool and stock data â€” populated by loadAllocations() fragment's <script>
+let POOL_DATA  = {};
+let STOCK_DATA = {};
+
+function onPoolProductChange() {
+  const sel = document.getElementById('pool-product');
+  const opt = sel.options[sel.selectedIndex];
+  const unit = opt.dataset.unit || '';
+  const pid = parseInt(opt.value);
+  document.getElementById('alloc-unit-label').textContent = unit ? `(${unit})` : '';
+
+  // Current pool info
+  const info = document.getElementById('pool-current-info');
+  if (POOL_DATA[pid]) {
+    const d = POOL_DATA[pid];
+    info.textContent = `Current pool: ${d.available.toLocaleString()} available / ${d.total.toLocaleString()} total Â· ${d.reserved.toLocaleString()} reserved`;
+    info.classList.remove('hidden');
+  } else {
+    info.classList.add('hidden');
+  }
+
+  // Stock on hand
+  showStockInfo(pid, 'pool-stock-info', 'pool-stock-total', 'pool-stock-lots', unit);
+}
+
+// Pre-fill the form and switch to allocations tab
+function prefillAlloc(spId, productId, unit) {
+  showTab('allocations');
+  if (spId === 0) {
+    // It's a shared pool product
+    setAllocMode('pool');
+    document.getElementById('pool-product').value = productId;
+    onPoolProductChange();
+  } else {
+    setAllocMode('individual');
+    document.getElementById('alloc-sp').value = spId;
+    document.getElementById('alloc-product').value = productId;
+    document.getElementById('alloc-unit-label').textContent = unit ? `(${unit})` : '';
+  }
+  document.getElementById('alloc-qty').focus();
+}
+
+async function saveAllocation() {
+  const qty = parseInt(document.getElementById('alloc-qty').value);
+  if (!qty || qty < 1) { showAllocMsg('Enter a valid quantity (minimum 1).', false); return; }
+
+  if (_allocMode === 'pool') {
+    // Save shared pool
+    const prodId = parseInt(document.getElementById('pool-product').value);
+    if (!prodId) { showAllocMsg('Select a product.', false); return; }
+    const r = await fetch('/admin/fcfs-pools', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: prodId, total_qty: qty }),
+    });
+    if (r.ok) {
+      showAllocMsg('Shared pool updated!', true);
+      setTimeout(() => location.reload(), 800);
+    } else {
+      const err = await r.json();
+      showAllocMsg(err.detail || 'Failed to save.', false);
+    }
+  } else {
+    // Save individual allocation
+    const spId   = parseInt(document.getElementById('alloc-sp').value);
+    const prodId = parseInt(document.getElementById('alloc-product').value);
+    if (!spId || !prodId) { showAllocMsg('Select a salesperson and product.', false); return; }
+    const r = await fetch('/admin/allocations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ salesperson_id: spId, product_id: prodId, allocated_qty: qty }),
+    });
+    if (r.ok) {
+      showAllocMsg('Allocation saved!', true);
+      setTimeout(() => location.reload(), 800);
+    } else {
+      const err = await r.json();
+      showAllocMsg(err.detail || 'Failed to save.', false);
+    }
+  }
+}
+
+function openPriceModal(id, name, base, floor, ceiling, special, btn) {
+  document.getElementById('price-modal-id').value = id;
+  document.getElementById('price-modal-name').textContent = name;
+  document.getElementById('price-modal-base').value = base.toFixed(2);
+  document.getElementById('price-modal-floor').value = floor !== null ? floor.toFixed(2) : '';
+  document.getElementById('price-modal-ceiling').value = ceiling !== null ? ceiling.toFixed(2) : '';
+  document.getElementById('price-modal-special').value = special !== null ? special.toFixed(2) : '';
+  // Read remark from data attribute â€” avoids quote-escaping issues in onclick
+  document.getElementById('price-modal-remark').value = (btn && btn.dataset && btn.dataset.remark) ? btn.dataset.remark : '';
+  document.getElementById('price-modal-msg').classList.add('hidden');
+  document.getElementById('price-modal').classList.remove('hidden');
+}
+function closePriceModal() {
+  document.getElementById('price-modal').classList.add('hidden');
+}
+async function savePriceModal() {
+  const id      = parseInt(document.getElementById('price-modal-id').value);
+  const base    = parseFloat(document.getElementById('price-modal-base').value);
+  const floor   = document.getElementById('price-modal-floor').value;
+  const ceil    = document.getElementById('price-modal-ceiling').value;
+  const special = document.getElementById('price-modal-special').value;
+  const remark  = document.getElementById('price-modal-remark').value.trim();
+  if (isNaN(base) || base < 0) { showPriceMsg('Enter a valid base price.', false); return; }
+  const r = await fetch(`/admin/products/${id}/price`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      base_price: base,
+      price_floor: floor ? parseFloat(floor) : null,
+      price_ceiling: ceil ? parseFloat(ceil) : null,
+      special_price: special ? parseFloat(special) : null,
+      remark: remark || null,
+    }),
+  });
+  if (r.ok) {
+    showPriceMsg('Price saved!', true);
+    setTimeout(() => { closePriceModal(); location.reload(); }, 700);
+  } else {
+    const err = await r.json();
+    showPriceMsg(err.detail || 'Failed to save.', false);
+  }
+}
+function showPriceMsg(text, success) {
+  const el = document.getElementById('price-modal-msg');
+  el.textContent = text;
+  el.className = `text-sm text-center rounded-lg py-2 ${success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`;
+  el.classList.remove('hidden');
+}
+
+async function dismissAlert(alertId) {
+  const el = document.getElementById(`alert-${alertId}`);
+  el.style.opacity = '0.5';
+  const r = await fetch(`/admin/stock-alerts/${alertId}`, { method: 'DELETE' });
+  if (r.ok) {
+    el.remove();
+  } else {
+    el.style.opacity = '1';
+    alert('Could not dismiss alert.');
+  }
+}
+
+async function removeAlloc(allocId, spName, productName) {
+  if (!confirm(`Remove allocation for ${spName} â€” ${productName}?\nThis sets their balance to 0.`)) return;
+  const r = await fetch(`/admin/allocations/${allocId}`, { method: 'DELETE' });
+  if (r.ok) {
+    showAllocMsg('Allocation removed.', true);
+    setTimeout(() => location.reload(), 700);
+  } else {
+    const err = await r.json();
+    showAllocMsg(err.detail || 'Failed to remove.', false);
+  }
+}
+
+async function clearAlloc(productId, productName) {
+  if (!confirm(`Clear ALL allocations for "${productName}"?\n\nThis zeros both individual allocations and the pool.`)) return;
+  const r = await fetch(`/admin/products/${productId}/clear-allocations`, { method: 'POST' });
+  if (r.ok) {
+    showAllocMsg(`âœ“ All allocations cleared for "${productName}".`, true);
+    setTimeout(() => location.reload(), 700);
+  } else {
+    const err = await r.json();
+    showAllocMsg(err.detail || 'Failed to clear allocations.', false);
+  }
+}
+
+async function clearPool(productId, productName) {
+  if (!confirm(`Set shared pool for "${productName}" to zero? Salespeople won't be able to order more until you set a new pool quantity.`)) return;
+  const r = await fetch(`/admin/fcfs-pools/${productId}/zero`, { method: 'POST' });
+  if (r.ok) {
+    showAllocMsg('Pool cleared to 0.', true);
+    setTimeout(() => location.reload(), 800);
+  } else {
+    const err = await r.json();
+    showAllocMsg(err.detail || 'Failed to clear pool.', false);
+  }
+}
+
+async function saveInlinePool(productId) {
+  const input = document.getElementById(`pool-qty-${productId}`);
+  const qty = parseInt(input.value);
+  if (isNaN(qty) || qty < 0) { alert('Enter a valid pool quantity.'); return; }
+  const r = await fetch('/admin/fcfs-pools', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ salesperson_id: topUpTarget.salespersonId,
-                           product_id: topUpTarget.productId,
-                           allocated_qty: qty })
+    body: JSON.stringify({ product_id: productId, total_qty: qty, lot_id: null }),
   });
-  if (r.ok) { closeTopUp(); location.reload(); }
-  else alert((await r.json()).detail);
+  if (r.ok) {
+    showAllocMsg(`âœ“ Pool set to ${qty}`, true);
+    setTimeout(() => location.reload(), 700);
+  } else {
+    const err = await r.json();
+    showAllocMsg(err.detail || 'Failed to set pool.', false);
+  }
 }
+
+async function resetAllAlloc(productId, productName) {
+  const input = document.getElementById(`reset-qty-${productId}`);
+  const qty = parseInt(input.value);
+  if (isNaN(qty) || qty < 0) {
+    alert('Please enter a valid quantity (0 or more).'); return;
+  }
+  if (!confirm(`Reset ALL users' allocation for "${productName}" to ${qty}?\n\nThis overwrites each person's current balance and sets used qty back to 0.`)) return;
+  const r = await fetch(`/admin/products/${productId}/reset-all-allocations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ qty }),
+  });
+  if (r.ok) {
+    const data = await r.json();
+    showAllocMsg(`âœ“ Reset ${data.updated} users to ${qty} ${data.qty === 1 ? 'unit' : 'units'} each.`, true);
+    localStorage.setItem(`reset-qty-${productId}`, qty);
+    setTimeout(() => location.reload(), 900);
+  } else {
+    const err = await r.json();
+    showAllocMsg(err.detail || 'Failed to reset allocations.', false);
+  }
+}
+
+async function savePreset(productId, userId, groupId) {
+  const inputId = userId ? `upreset-${productId}-${userId}` : `gpreset-${productId}-${groupId}`;
+  const input = document.getElementById(inputId);
+  const qty = input && input.value.trim() ? parseInt(input.value) : 0;
+  const body = { weekly_qty: qty };
+  if (userId)  body.user_id  = userId;
+  if (groupId) body.group_id = groupId;
+  const r = await fetch(`/admin/products/${productId}/preset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (r.ok) { showAllocMsg(`âœ“ Preset saved: ${qty}/wk`, true); }
+  else { const e = await r.json(); showAllocMsg(e.detail || 'Failed to save preset.', false); }
+}
+
+function showAllocMsg(text, success) {
+  const el = document.getElementById('alloc-msg');
+  el.textContent = text;
+  el.className = `text-sm text-center rounded-lg py-2 ${success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`;
+  el.classList.remove('hidden');
+}
+
+// Restore last-used reset qty values after page reload
+document.querySelectorAll('[id^="reset-qty-"]').forEach(input => {
+  const pid = input.id.replace('reset-qty-', '');
+  const saved = localStorage.getItem(`reset-qty-${pid}`);
+  if (saved) input.value = saved;
+});
+
+// â”€â”€ Group management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+async function createGroup() {
+  const input = document.getElementById('new-group-name');
+  const name = input.value.trim();
+  if (!name) { alert('Enter a group name.'); return; }
+  const r = await fetch('/admin/groups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (r.ok) {
+    input.value = '';
+    location.reload();
+  } else {
+    const e = await r.json();
+    alert(e.detail || 'Failed to create group.');
+  }
+}
+
+async function deleteGroup(groupId, groupName) {
+  if (!confirm(`Delete group "${groupName}"? Members will become individual.`)) return;
+  const r = await fetch(`/admin/groups/${groupId}`, { method: 'DELETE' });
+  if (r.ok) { location.reload(); }
+  else { const e = await r.json(); alert(e.detail || 'Failed to delete group.'); }
+}
+
+async function assignGroup(userId, groupId) {
+  const r = await fetch(`/admin/groups/users/${userId}/assign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group_id: groupId ? parseInt(groupId) : null }),
+  });
+  if (!r.ok) { const e = await r.json(); alert(e.detail || 'Failed to assign group.'); }
+}
+
+// â”€â”€ User management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+let _resetPwUserId = null;
+
+function roleLabel(role) {
+  return { salesperson: 'Salesperson', admin: 'Admin', warehouse: 'Warehouse' }[role] || role;
+}
+
+function roleBadgeClass(role) {
+  if (role === 'admin')       return 'bg-purple-100 text-purple-700';
+  if (role === 'warehouse')   return 'bg-blue-100 text-blue-700';
+  return 'bg-green-100 text-green-700'; // salesperson
+}
+
+async function loadUsers() {
+  const body = document.getElementById('user-list-body');
+  const [usersRes, groupsRes] = await Promise.all([fetch('/admin/users'), fetch('/admin/groups')]);
+  if (!usersRes.ok) { body.innerHTML = '<p class="text-sm text-red-500 px-4 py-3">Failed to load users.</p>'; return; }
+  const users  = await usersRes.json();
+  const groups = groupsRes.ok ? await groupsRes.json() : [];
+  if (!users.length) { body.innerHTML = '<p class="text-sm text-gray-400 px-4 py-3 text-center">No users yet.</p>'; return; }
+
+  const groupOptions = [
+    '<option value="">â€” Individual â€”</option>',
+    ...groups.map(g => `<option value="${g.id}">${g.name}</option>`),
+  ].join('');
+
+  body.innerHTML = users.map(u => {
+    // find which group this user belongs to
+    const userGroup = groups.find(g => g.members.some(m => m.id === u.id));
+    const groupSelectVal = userGroup ? userGroup.id : '';
+    const groupOptionsForUser = [
+      '<option value="">â€” Individual â€”</option>',
+      ...groups.map(g => `<option value="${g.id}" ${g.id === groupSelectVal ? 'selected' : ''}>${g.name}</option>`),
+    ].join('');
+
+    return `
+    <div class="${u.is_active ? '' : 'opacity-60'}">
+      <!-- Main row -->
+      <div class="px-4 py-3 flex items-center gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-medium text-sm">${u.name}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded-full ${roleBadgeClass(u.role)}">${roleLabel(u.role)}</span>
+            ${!u.is_active ? '<span class="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Disabled</span>' : ''}
+            ${!u.has_password ? '<span class="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">No PW</span>' : ''}
+            ${userGroup ? `<span class="text-xs px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">${userGroup.name}</span>` : ''}
+          </div>
+          <div class="text-xs text-gray-400 mt-0.5">@${u.login}</div>
+          ${(u.role === 'salesperson' || u.role === 'admin') ? `
+          <div class="flex items-center gap-1 mt-1">
+            <span class="text-xs text-gray-400 shrink-0">Group:</span>
+            <select onchange="assignGroup(${u.id}, this.value)"
+                    class="text-xs border border-gray-200 rounded px-1 py-0 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white">
+              ${groupOptionsForUser}
+            </select>
+          </div>` : ''}
+        </div>
+        <div class="flex gap-1 shrink-0">
+          <button onclick="toggleEditUser(${u.id})"
+                  class="text-xs px-2 py-1 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition">
+            Edit
+          </button>
+          <button onclick="openResetPw(${u.id}, '${u.name.replace(/'/g,"&#39;")}')"
+                  class="text-xs px-2 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition">
+            PW
+          </button>
+          ${u.is_active
+            ? `<button onclick="toggleUser(${u.id}, false)"
+                       class="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition">
+                 Off
+               </button>`
+            : `<button onclick="toggleUser(${u.id}, true)"
+                       class="text-xs px-2 py-1 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition">
+                 On
+               </button>`
+          }
+          <button onclick="deleteUser(${u.id}, '${u.name.replace(/'/g,"&#39;")}')"
+                  class="text-xs px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition">
+            âœ•
+          </button>
+        </div>
+      </div>
+      <!-- Inline edit panel (hidden by default) -->
+      <div id="edit-user-${u.id}" class="hidden px-4 pb-3 pt-1 bg-blue-50 border-t border-blue-100">
+        <div class="flex gap-2 items-end">
+          <div class="flex-1 space-y-1.5">
+            <div>
+              <label class="text-xs text-gray-500 font-medium">Name</label>
+              <input id="edit-name-${u.id}" type="text" value="${u.name.replace(/"/g,'&quot;')}"
+                     class="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 font-medium">Role</label>
+              <select id="edit-role-${u.id}"
+                      class="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                <option value="salesperson" ${u.role==='salesperson'?'selected':''}>Salesperson</option>
+                <option value="admin"       ${u.role==='admin'      ?'selected':''}>Admin</option>
+                <option value="warehouse"   ${u.role==='warehouse'  ?'selected':''}>Warehouse</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1.5 shrink-0">
+            <button onclick="saveEditUser(${u.id})"
+                    class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg font-semibold hover:bg-brand-dark transition">
+              Save
+            </button>
+            <button onclick="toggleEditUser(${u.id})"
+                    class="text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition">
+              Cancel
+            </button>
+          </div>
+        </div>
+        <p id="edit-user-msg-${u.id}" class="hidden text-xs mt-1.5"></p>
+      </div>
+    </div>
+  `;
+  }).join('');
+}
+
+async function createUser() {
+  const name     = document.getElementById('new-user-name').value.trim();
+  const login    = document.getElementById('new-user-login').value.trim();
+  const role     = document.getElementById('new-user-role').value;
+  const password = document.getElementById('new-user-password').value;
+
+  if (!name || !login || !password) {
+    showUserMsg('Please fill in all fields.', false); return;
+  }
+  if (password.length < 4) {
+    showUserMsg('Password must be at least 4 characters.', false); return;
+  }
+
+  const r = await fetch('/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, login, role, password }),
+  });
+  if (r.ok) {
+    showUserMsg('User created successfully!', true);
+    document.getElementById('new-user-name').value = '';
+    document.getElementById('new-user-login').value = '';
+    document.getElementById('new-user-password').value = '';
+    loadUsers();
+  } else {
+    const err = await r.json();
+    showUserMsg(err.detail || 'Failed to create user.', false);
+  }
+}
+
+async function toggleUser(userId, activate) {
+  const action = activate ? 'activate' : 'deactivate';
+  const label  = activate ? 'enable' : 'disable';
+  if (!confirm(`Are you sure you want to ${label} this user?`)) return;
+  const r = await fetch(`/admin/users/${userId}/${action}`, { method: 'POST' });
+  if (r.ok) {
+    loadUsers();
+  } else {
+    const err = await r.json();
+    alert(err.detail || `Failed to ${label} user.`);
+  }
+}
+
+function toggleEditUser(userId) {
+  const panel = document.getElementById(`edit-user-${userId}`);
+  panel.classList.toggle('hidden');
+}
+
+async function saveEditUser(userId) {
+  const name = document.getElementById(`edit-name-${userId}`).value.trim();
+  const role = document.getElementById(`edit-role-${userId}`).value;
+  const msg  = document.getElementById(`edit-user-msg-${userId}`);
+  if (!name) { msg.textContent = 'Name cannot be empty.'; msg.className = 'text-xs mt-1.5 text-red-600'; msg.classList.remove('hidden'); return; }
+  const r = await fetch(`/admin/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, role }),
+  });
+  if (r.ok) {
+    loadUsers();  // reload list (closes all edit panels)
+  } else {
+    const err = await r.json();
+    msg.textContent = err.detail || 'Failed to save.';
+    msg.className = 'text-xs mt-1.5 text-red-600';
+    msg.classList.remove('hidden');
+  }
+}
+
+async function deleteUser(userId, userName) {
+  if (!confirm(`Permanently remove "${userName}"?\n\nThis cannot be undone. Their past orders will remain in history.`)) return;
+  const r = await fetch(`/admin/users/${userId}`, { method: 'DELETE' });
+  if (r.ok) {
+    loadUsers();
+  } else {
+    const err = await r.json();
+    alert(err.detail || 'Failed to remove user.');
+  }
+}
+
+function openResetPw(userId, userName) {
+  _resetPwUserId = userId;
+  document.getElementById('reset-pw-name').textContent = userName;
+  document.getElementById('reset-pw-value').value = '';
+  document.getElementById('reset-pw-msg').classList.add('hidden');
+  document.getElementById('reset-pw-modal').classList.remove('hidden');
+}
+
+function closeResetPw() {
+  _resetPwUserId = null;
+  document.getElementById('reset-pw-modal').classList.add('hidden');
+}
+
+async function doResetPw() {
+  const pw = document.getElementById('reset-pw-value').value;
+  if (!pw || pw.length < 4) {
+    showResetPwMsg('Password must be at least 4 characters.', false); return;
+  }
+  const r = await fetch(`/admin/users/${_resetPwUserId}/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_password: pw }),
+  });
+  if (r.ok) {
+    showResetPwMsg('Password reset!', true);
+    setTimeout(closeResetPw, 800);
+  } else {
+    const err = await r.json();
+    showResetPwMsg(err.detail || 'Failed to reset.', false);
+  }
+}
+
+function showUserMsg(text, success) {
+  const el = document.getElementById('new-user-msg');
+  el.textContent = text;
+  el.className = `text-sm text-center rounded-lg py-2 ${success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`;
+  el.classList.remove('hidden');
+}
+
+function showResetPwMsg(text, success) {
+  const el = document.getElementById('reset-pw-msg');
+  el.textContent = text;
+  el.className = `text-sm text-center rounded-lg py-2 ${success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`;
+  el.classList.remove('hidden');
+}
+
+// Load users whenever the Users tab is opened
+document.getElementById('tab-users') && document.getElementById('tab-users').addEventListener('click', () => {
+  loadUsers();
+});
+
+
+// â”€â”€ Customers tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let _allCustomers = [];
+
+async function loadCustomers() {
+  const res = await fetch('/customers');
+  _allCustomers = await res.json();
+  filterCustomers('');
+}
+
+function filterCustomers(q) {
+  const spId = document.getElementById('cust-sp-filter').value;
+  const term = q.toLowerCase();
+  const list = _allCustomers.filter(c =>
+    (!term || c.name.toLowerCase().includes(term)) &&
+    (!spId  || String(c.salesperson_id) === spId)
+  );
+  const box = document.getElementById('cust-list');
+  if (!list.length) {
+    box.innerHTML = '<div class="py-6 text-center text-gray-400 text-xs">No customers found.</div>';
+    return;
+  }
+  box.innerHTML = list.map(c => `
+    <div class="flex items-center justify-between px-2 py-2.5 hover:bg-gray-50">
+      <div>
+        <div class="font-medium text-gray-800">${c.name}</div>
+        <div class="text-xs text-gray-400">${c.sage_customer_code || ''}</div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-xs text-gray-500">${c.salesperson_name || 'â€”'}</span>
+        <span class="text-xs px-1.5 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}">
+          ${c.is_active ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+    </div>`).join('');
+}
+
+async function syncCustomersFromSage() {
+  const btn = document.getElementById('sage-sync-btn');
+  const result = document.getElementById('sage-sync-result');
+  btn.disabled = true;
+  btn.innerHTML = 'âŸ³ Syncingâ€¦';
+  result.className = 'hidden mt-3 text-xs rounded-lg px-3 py-2';
+  const r = await fetch('/customers/sync-from-sage', { method: 'POST' });
+  const data = await r.json();
+  result.classList.remove('hidden');
+  if (r.ok) {
+    result.className = 'mt-3 text-xs rounded-lg px-3 py-2 bg-green-50 text-green-700';
+    result.textContent = `âœ“ Sync complete â€” ${data.added} new, ${data.updated} updated, ${data.total} total customers.`;
+    _allCustomers = [];
+    loadCustomers();
+  } else {
+    result.className = 'mt-3 text-xs rounded-lg px-3 py-2 bg-red-50 text-red-600';
+    result.textContent = data.detail || 'Sync failed.';
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'â†» Sync from Sage';
+}
+
 </script>
 {% endblock %}
