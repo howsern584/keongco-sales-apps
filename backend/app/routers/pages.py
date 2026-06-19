@@ -225,8 +225,12 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
     if redirect:
         return redirect
 
-    sp_filter = None if user.role == models.UserRole.admin else user.id
-    orders = orders_summary_query(db, salesperson_id=sp_filter)
+    if user.role == models.UserRole.admin:
+        # Admin sees everyone's orders — cap at the 300 most recent so the page
+        # stays fast/light even with thousands of historical orders.
+        orders = orders_summary_query(db, limit=300)
+    else:
+        orders = orders_summary_query(db, salesperson_id=user.id)
     return render("orders.html", orders=orders, role=user.role.value, user=user)
 
 
