@@ -1,4 +1,4 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% set show_nav = true %}
 {% set active = "admin" %}
 
@@ -48,7 +48,7 @@
   {% endif %}
 </div>
 
-<!-- â”€â”€ Pending orders â”€â”€ -->
+<!-- ── Pending orders ── -->
 <div id="pane-pending">
   {% if pending_orders %}
   <div class="space-y-3">
@@ -56,7 +56,7 @@
     <a href="/app/orders/{{ order.id }}"
        class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
       <div class="flex items-center justify-between mb-1">
-        <span class="font-semibold">#{{ order.id | order_no }} â€” {{ order.customer_name }}</span>
+        <span class="font-semibold">#{{ order.id | order_no }} — {{ order.customer_name }}</span>
         <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-submitted">Submitted</span>
       </div>
       <div class="text-sm text-gray-500 flex justify-between">
@@ -72,18 +72,18 @@
     <svg class="w-14 h-14 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
     </svg>
-    <p class="text-sm">No pending orders â€” all clear!</p>
+    <p class="text-sm">No pending orders — all clear!</p>
   </div>
   {% endif %}
 </div>
 
-<!-- â”€â”€ All orders â”€â”€ -->
+<!-- ── All orders ── -->
 <div id="pane-all" class="hidden space-y-3">
   {% for order in all_orders %}
   <a href="/app/orders/{{ order.id }}"
      class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
     <div class="flex items-center justify-between mb-1">
-      <span class="font-semibold"># {{ order.id }} â€” {{ order.customer_name }}</span>
+      <span class="font-semibold"># {{ order.id }} — {{ order.customer_name }}</span>
       <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">
         {{ order.status | replace('_',' ') | title }}
       </span>
@@ -99,31 +99,31 @@
   {% endfor %}
 </div>
 
-<!-- â”€â”€ Allocations tab â”€â”€ -->
+<!-- ── Allocations tab ── -->
 <div id="pane-allocations" class="hidden">
-  <div id="alloc-tab-loading" class="py-16 text-center text-gray-400 text-sm">Loading allocationsâ€¦</div>
+  <div id="alloc-tab-loading" class="py-16 text-center text-gray-400 text-sm">Loading allocations…</div>
   <div id="alloc-tab-content" class="hidden"><!-- injected by loadAllocations() --></div>
 </div>
 
 
 
 
-<!-- â”€â”€ Prices tab â”€â”€ -->
+<!-- ── Prices tab ── -->
 <div id="pane-prices" class="hidden space-y-3">
 
   {# Category display order and friendly labels #}
   {% set cat_order = ['on','sh','gi','po','ga','co','pa','be','sp','dc'] %}
   {% set cat_labels = {
-    'on': 'ON â€” Bawang Besar (Onion)',
-    'sh': 'SH â€” Bawang Merah (Shallot)',
-    'gi': 'GI â€” Halia (Ginger)',
-    'po': 'PO â€” Kentang (Potato)',
-    'ga': 'GA â€” Bawang Putih (Garlic)',
-    'co': 'CO â€” Gula (Sugar)',
-    'pa': 'PA â€” Suun (Vermicelli)',
-    'be': 'BE â€” Kacang (Beans)',
-    'sp': 'SP â€” Rempah (Spices)',
-    'dc': 'DC â€” Cili (Chili)'
+    'on': 'ON — Bawang Besar (Onion)',
+    'sh': 'SH — Bawang Merah (Shallot)',
+    'gi': 'GI — Halia (Ginger)',
+    'po': 'PO — Kentang (Potato)',
+    'ga': 'GA — Bawang Putih (Garlic)',
+    'co': 'CO — Gula (Sugar)',
+    'pa': 'PA — Suun (Vermicelli)',
+    'be': 'BE — Kacang (Beans)',
+    'sp': 'SP — Rempah (Spices)',
+    'dc': 'DC — Cili (Chili)'
   } %}
 
   {% for cat in cat_order %}
@@ -154,24 +154,24 @@
             <div class="flex items-center gap-1 mt-0.5 flex-wrap">
               {% if p.price_ceiling %}
               <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_ceiling) }}</span>
-              <span class="text-xs text-gray-300">â€“</span>
+              <span class="text-xs text-gray-300">–</span>
               {% endif %}
               <span class="text-sm font-bold {% if p.base_price == 0 %}text-red-500{% else %}text-brand{% endif %}">
                 RM {{ "%.2f"|format(p.base_price) }}
               </span>
               {% if p.price_floor %}
-              <span class="text-xs text-gray-300">â€“</span>
+              <span class="text-xs text-gray-300">–</span>
               <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_floor) }}</span>
               {% endif %}
               {% if prev is not none and p.base_price != prev %}
                 {% if p.base_price > prev %}
-                <span class="text-xs font-semibold text-green-600 ml-1">â†‘</span>
+                <span class="text-xs font-semibold text-green-600 ml-1">↑</span>
                 {% else %}
-                <span class="text-xs font-semibold text-red-500 ml-1">â†“</span>
+                <span class="text-xs font-semibold text-red-500 ml-1">↓</span>
                 {% endif %}
               {% endif %}
               {% if p.special_price %}
-              <span class="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full ml-1">â˜… RM {{ "%.2f"|format(p.special_price) }}</span>
+              <span class="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full ml-1">★ RM {{ "%.2f"|format(p.special_price) }}</span>
               {% endif %}
             </div>
           </div>
@@ -207,21 +207,21 @@
           <div class="flex items-center gap-1 mt-0.5 flex-wrap">
             {% if p.price_ceiling %}
             <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_ceiling) }}</span>
-            <span class="text-xs text-gray-300">â€“</span>
+            <span class="text-xs text-gray-300">–</span>
             {% endif %}
             <span class="text-sm font-bold {% if p.base_price == 0 %}text-red-500{% else %}text-brand{% endif %}">
               RM {{ "%.2f"|format(p.base_price) }}
             </span>
             {% if p.price_floor %}
-            <span class="text-xs text-gray-300">â€“</span>
+            <span class="text-xs text-gray-300">–</span>
             <span class="text-xs text-gray-400">RM {{ "%.2f"|format(p.price_floor) }}</span>
             {% endif %}
             {% if prev is not none and p.base_price != prev %}
-              {% if p.base_price > prev %}<span class="text-xs font-semibold text-green-600 ml-1">â†‘</span>
-              {% else %}<span class="text-xs font-semibold text-red-500 ml-1">â†“</span>{% endif %}
+              {% if p.base_price > prev %}<span class="text-xs font-semibold text-green-600 ml-1">↑</span>
+              {% else %}<span class="text-xs font-semibold text-red-500 ml-1">↓</span>{% endif %}
             {% endif %}
             {% if p.special_price %}
-            <span class="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full ml-1">â˜… RM {{ "%.2f"|format(p.special_price) }}</span>
+            <span class="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full ml-1">★ RM {{ "%.2f"|format(p.special_price) }}</span>
             {% endif %}
           </div>
         </div>
@@ -249,19 +249,19 @@
       <div class="flex gap-2">
         <div class="flex-1 text-center">
           <label class="block text-xs font-medium text-gray-500 mb-1">Min (RM)</label>
-          <input id="price-modal-floor" type="number" step="0.01" min="0" placeholder="â€”"
+          <input id="price-modal-floor" type="number" step="0.01" min="0" placeholder="—"
                  class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand"/>
           <p class="text-xs text-gray-400 mt-0.5">Floor</p>
         </div>
         <div class="flex-1 text-center">
-          <label class="block text-xs font-semibold text-brand mb-1">Base (RM) â˜…</label>
+          <label class="block text-xs font-semibold text-brand mb-1">Base (RM) ★</label>
           <input id="price-modal-base" type="number" step="0.01" min="0" placeholder="0.00"
                  class="w-full border-2 border-brand rounded-lg px-2 py-2 text-base text-center font-bold focus:outline-none focus:ring-2 focus:ring-brand"/>
           <p class="text-xs text-gray-400 mt-0.5">Standard</p>
         </div>
         <div class="flex-1 text-center">
           <label class="block text-xs font-medium text-gray-500 mb-1">Max (RM)</label>
-          <input id="price-modal-ceiling" type="number" step="0.01" min="0" placeholder="â€”"
+          <input id="price-modal-ceiling" type="number" step="0.01" min="0" placeholder="—"
                  class="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand"/>
           <p class="text-xs text-gray-400 mt-0.5">Ceiling</p>
         </div>
@@ -271,7 +271,7 @@
       <div class="border-t border-gray-100 pt-2">
         <label class="block text-xs font-medium text-gray-600 mb-1">
           Special / Discount Price (RM)
-          <span class="font-normal text-gray-400 ml-1">â€” leave blank if not applicable</span>
+          <span class="font-normal text-gray-400 ml-1">— leave blank if not applicable</span>
         </label>
         <div class="flex gap-2 items-center">
           <input id="price-modal-special" type="number" step="0.01" min="0" placeholder="e.g. 45.00"
@@ -285,7 +285,7 @@
       <div class="border-t border-gray-100 pt-2">
         <label class="block text-xs font-medium text-gray-600 mb-1">
           Remark
-          <span class="font-normal text-gray-400 ml-1">â€” brand, marking, packaging note (optional)</span>
+          <span class="font-normal text-gray-400 ml-1">— brand, marking, packaging note (optional)</span>
         </label>
         <input id="price-modal-remark" type="text" placeholder="e.g. Thailand origin, Jumbo grade"
                class="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-indigo-50"/>
@@ -302,7 +302,7 @@
   </div>
 </div>
 
-<!-- â”€â”€ Alerts tab â”€â”€ -->
+<!-- ── Alerts tab ── -->
 {% if stock_alerts %}
 <div id="pane-alerts" class="hidden space-y-3">
   {% for alert in stock_alerts %}
@@ -332,20 +332,20 @@
 
 <!-- Reports pane -->
 <div id="pane-reports" class="hidden space-y-4">
-  <div id="reports-loading" class="py-12 text-center text-gray-400 text-sm">Loading reportsâ€¦</div>
+  <div id="reports-loading" class="py-12 text-center text-gray-400 text-sm">Loading reports…</div>
   <div id="reports-content" class="hidden space-y-4">
     <!-- KPI cards -->
     <div class="grid grid-cols-3 gap-3">
       <div class="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
-        <div id="rpt-revenue" class="text-2xl font-bold text-brand">â€”</div>
+        <div id="rpt-revenue" class="text-2xl font-bold text-brand">—</div>
         <div class="text-xs text-gray-500 mt-1">Total Revenue</div>
       </div>
       <div class="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
-        <div id="rpt-completed" class="text-2xl font-bold text-blue-600">â€”</div>
+        <div id="rpt-completed" class="text-2xl font-bold text-blue-600">—</div>
         <div class="text-xs text-gray-500 mt-1">Completed Orders</div>
       </div>
       <div class="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
-        <div id="rpt-pending" class="text-2xl font-bold text-amber-600">â€”</div>
+        <div id="rpt-pending" class="text-2xl font-bold text-amber-600">—</div>
         <div class="text-xs text-gray-500 mt-1">Pending Review</div>
       </div>
     </div>
@@ -367,8 +367,8 @@
   </div>
 </div>
 
-<!-- â”€â”€ Users tab â”€â”€ -->
-<!-- â”€â”€ Customers â”€â”€ -->
+<!-- ── Users tab ── -->
+<!-- ── Customers ── -->
 <div id="pane-customers" class="hidden space-y-4">
 
   <!-- Sync from Sage card -->
@@ -377,7 +377,7 @@
       <div>
         <div class="font-semibold text-purple-900 text-sm">Sync Customers from Sage 300</div>
         <div class="text-xs text-purple-600 mt-1">Pulls customer list and salesperson assignments directly from Sage Accpac. New customers are added; existing ones are updated.</div>
-        <div class="text-xs text-gray-400 mt-1">Phase 3 â€” requires Sage 300 server connection</div>
+        <div class="text-xs text-gray-400 mt-1">Phase 3 — requires Sage 300 server connection</div>
       </div>
       <button onclick="syncCustomersFromSage()" id="sage-sync-btn"
               class="shrink-0 flex items-center gap-1.5 bg-purple-600 text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-purple-700 transition">
@@ -393,7 +393,7 @@
   <!-- Search + customer list -->
   <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
     <div class="flex items-center gap-2 mb-3">
-      <input id="cust-search" type="text" placeholder="Search customer nameâ€¦"
+      <input id="cust-search" type="text" placeholder="Search customer name…"
              oninput="filterCustomers(this.value)"
              class="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
       <select id="cust-sp-filter" onchange="filterCustomers(document.getElementById('cust-search').value)"
@@ -520,7 +520,7 @@
 
 {% block scripts %}
 <script>
-// â”€â”€ Allocation data â€” populated by loadAllocations() fragment's <script> â”€â”€â”€â”€â”€â”€
+// ── Allocation data — populated by loadAllocations() fragment's <script> ──────
 let ALLOC_SALESPEOPLE = [];
 let ALLOC_MAP = {};
 let POOL_MAP  = {};
@@ -549,18 +549,18 @@ async function saveInlineAlloc(btn, spId, productId) {
   const input = btn.previousElementSibling;
   const qty = parseInt(input.value);
   if (isNaN(qty) || qty < 0) { alert('Enter a valid quantity.'); return; }
-  btn.textContent = 'â€¦';
+  btn.textContent = '…';
   const r = await fetch('/admin/allocations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ salesperson_id: spId, product_id: productId, allocated_qty: qty }),
   });
   if (r.ok) {
-    btn.textContent = 'âœ“';
-    showAllocMsg(`âœ“ Saved`, true);
+    btn.textContent = '✓';
+    showAllocMsg(`✓ Saved`, true);
     setTimeout(() => location.reload(), 600);
   } else {
-    btn.textContent = 'âœ—';
+    btn.textContent = '✗';
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed', false);
   }
@@ -589,7 +589,7 @@ function showTab(name) {
   if (name === 'users')    loadUsers();
 }
 
-// â”€â”€ Allocations tab (lazy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Allocations tab (lazy) ───────────────────────────────────────────────────
 let _allocLoaded = false;
 async function loadAllocations() {
   if (_allocLoaded) return;
@@ -603,7 +603,7 @@ async function loadAllocations() {
   content.classList.remove('hidden');
 }
 
-// â”€â”€ Reports tab (lazy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Reports tab (lazy) ────────────────────────────────────────────────────────
 let _reportsLoaded = false;
 async function loadReports() {
   if (_reportsLoaded) return;
@@ -664,7 +664,7 @@ async function loadReports() {
   showTab(valid.includes(hash) ? hash : 'pending');
 })();
 
-// â”€â”€ Allocation mode toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Allocation mode toggle ─────────────────────────────────────────────────
 let _allocMode = 'individual';
 
 function setAllocMode(mode) {
@@ -720,7 +720,7 @@ function showStockInfo(pid, boxId, totalId, lotsId, unit) {
   box.classList.remove('hidden');
 }
 
-// Pool and stock data â€” populated by loadAllocations() fragment's <script>
+// Pool and stock data — populated by loadAllocations() fragment's <script>
 let POOL_DATA  = {};
 let STOCK_DATA = {};
 
@@ -735,7 +735,7 @@ function onPoolProductChange() {
   const info = document.getElementById('pool-current-info');
   if (POOL_DATA[pid]) {
     const d = POOL_DATA[pid];
-    info.textContent = `Current pool: ${d.available.toLocaleString()} available / ${d.total.toLocaleString()} total Â· ${d.reserved.toLocaleString()} reserved`;
+    info.textContent = `Current pool: ${d.available.toLocaleString()} available / ${d.total.toLocaleString()} total · ${d.reserved.toLocaleString()} reserved`;
     info.classList.remove('hidden');
   } else {
     info.classList.add('hidden');
@@ -809,7 +809,7 @@ function openPriceModal(id, name, base, floor, ceiling, special, btn) {
   document.getElementById('price-modal-floor').value = floor !== null ? floor.toFixed(2) : '';
   document.getElementById('price-modal-ceiling').value = ceiling !== null ? ceiling.toFixed(2) : '';
   document.getElementById('price-modal-special').value = special !== null ? special.toFixed(2) : '';
-  // Read remark from data attribute â€” avoids quote-escaping issues in onclick
+  // Read remark from data attribute — avoids quote-escaping issues in onclick
   document.getElementById('price-modal-remark').value = (btn && btn.dataset && btn.dataset.remark) ? btn.dataset.remark : '';
   document.getElementById('price-modal-msg').classList.add('hidden');
   document.getElementById('price-modal').classList.remove('hidden');
@@ -864,7 +864,7 @@ async function dismissAlert(alertId) {
 }
 
 async function removeAlloc(allocId, spName, productName) {
-  if (!confirm(`Remove allocation for ${spName} â€” ${productName}?\nThis sets their balance to 0.`)) return;
+  if (!confirm(`Remove allocation for ${spName} — ${productName}?\nThis sets their balance to 0.`)) return;
   const r = await fetch(`/admin/allocations/${allocId}`, { method: 'DELETE' });
   if (r.ok) {
     showAllocMsg('Allocation removed.', true);
@@ -879,7 +879,7 @@ async function clearAlloc(productId, productName) {
   if (!confirm(`Clear ALL allocations for "${productName}"?\n\nThis zeros both individual allocations and the pool.`)) return;
   const r = await fetch(`/admin/products/${productId}/clear-allocations`, { method: 'POST' });
   if (r.ok) {
-    showAllocMsg(`âœ“ All allocations cleared for "${productName}".`, true);
+    showAllocMsg(`✓ All allocations cleared for "${productName}".`, true);
     setTimeout(() => location.reload(), 700);
   } else {
     const err = await r.json();
@@ -909,7 +909,7 @@ async function saveInlinePool(productId) {
     body: JSON.stringify({ product_id: productId, total_qty: qty, lot_id: null }),
   });
   if (r.ok) {
-    showAllocMsg(`âœ“ Pool set to ${qty}`, true);
+    showAllocMsg(`✓ Pool set to ${qty}`, true);
     setTimeout(() => location.reload(), 700);
   } else {
     const err = await r.json();
@@ -931,7 +931,7 @@ async function resetAllAlloc(productId, productName) {
   });
   if (r.ok) {
     const data = await r.json();
-    showAllocMsg(`âœ“ Reset ${data.updated} users to ${qty} ${data.qty === 1 ? 'unit' : 'units'} each.`, true);
+    showAllocMsg(`✓ Reset ${data.updated} users to ${qty} ${data.qty === 1 ? 'unit' : 'units'} each.`, true);
     localStorage.setItem(`reset-qty-${productId}`, qty);
     setTimeout(() => location.reload(), 900);
   } else {
@@ -952,7 +952,7 @@ async function savePreset(productId, userId, groupId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (r.ok) { showAllocMsg(`âœ“ Preset saved: ${qty}/wk`, true); }
+  if (r.ok) { showAllocMsg(`✓ Preset saved: ${qty}/wk`, true); }
   else { const e = await r.json(); showAllocMsg(e.detail || 'Failed to save preset.', false); }
 }
 
@@ -970,7 +970,7 @@ document.querySelectorAll('[id^="reset-qty-"]').forEach(input => {
   if (saved) input.value = saved;
 });
 
-// â”€â”€ Group management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Group management ─────────────────────────────────────────────────────────
 
 async function createGroup() {
   const input = document.getElementById('new-group-name');
@@ -1006,7 +1006,7 @@ async function assignGroup(userId, groupId) {
   if (!r.ok) { const e = await r.json(); alert(e.detail || 'Failed to assign group.'); }
 }
 
-// â”€â”€ User management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── User management ───────────────────────────────────────────────────────────
 
 let _resetPwUserId = null;
 
@@ -1029,7 +1029,7 @@ async function loadUsers() {
   if (!users.length) { body.innerHTML = '<p class="text-sm text-gray-400 px-4 py-3 text-center">No users yet.</p>'; return; }
 
   const groupOptions = [
-    '<option value="">â€” Individual â€”</option>',
+    '<option value="">— Individual —</option>',
     ...groups.map(g => `<option value="${g.id}">${g.name}</option>`),
   ].join('');
 
@@ -1038,7 +1038,7 @@ async function loadUsers() {
     const userGroup = groups.find(g => g.members.some(m => m.id === u.id));
     const groupSelectVal = userGroup ? userGroup.id : '';
     const groupOptionsForUser = [
-      '<option value="">â€” Individual â€”</option>',
+      '<option value="">— Individual —</option>',
       ...groups.map(g => `<option value="${g.id}" ${g.id === groupSelectVal ? 'selected' : ''}>${g.name}</option>`),
     ].join('');
 
@@ -1085,7 +1085,7 @@ async function loadUsers() {
           }
           <button onclick="deleteUser(${u.id}, '${u.name.replace(/'/g,"&#39;")}')"
                   class="text-xs px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition">
-            âœ•
+            ✕
           </button>
         </div>
       </div>
@@ -1257,7 +1257,7 @@ document.getElementById('tab-users') && document.getElementById('tab-users').add
 });
 
 
-// â”€â”€ Customers tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Customers tab ─────────────────────────────────────────────────────────────
 let _allCustomers = [];
 
 async function loadCustomers() {
@@ -1285,7 +1285,7 @@ function filterCustomers(q) {
         <div class="text-xs text-gray-400">${c.sage_customer_code || ''}</div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <span class="text-xs text-gray-500">${c.salesperson_name || 'â€”'}</span>
+        <span class="text-xs text-gray-500">${c.salesperson_name || '—'}</span>
         <span class="text-xs px-1.5 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}">
           ${c.is_active ? 'Active' : 'Inactive'}
         </span>
@@ -1297,14 +1297,14 @@ async function syncCustomersFromSage() {
   const btn = document.getElementById('sage-sync-btn');
   const result = document.getElementById('sage-sync-result');
   btn.disabled = true;
-  btn.innerHTML = 'âŸ³ Syncingâ€¦';
+  btn.innerHTML = '⟳ Syncing…';
   result.className = 'hidden mt-3 text-xs rounded-lg px-3 py-2';
   const r = await fetch('/customers/sync-from-sage', { method: 'POST' });
   const data = await r.json();
   result.classList.remove('hidden');
   if (r.ok) {
     result.className = 'mt-3 text-xs rounded-lg px-3 py-2 bg-green-50 text-green-700';
-    result.textContent = `âœ“ Sync complete â€” ${data.added} new, ${data.updated} updated, ${data.total} total customers.`;
+    result.textContent = `✓ Sync complete — ${data.added} new, ${data.updated} updated, ${data.total} total customers.`;
     _allCustomers = [];
     loadCustomers();
   } else {
@@ -1312,7 +1312,7 @@ async function syncCustomersFromSage() {
     result.textContent = data.detail || 'Sync failed.';
   }
   btn.disabled = false;
-  btn.innerHTML = 'â†» Sync from Sage';
+  btn.innerHTML = '↻ Sync from Sage';
 }
 
 </script>
