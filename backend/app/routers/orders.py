@@ -39,10 +39,9 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
     if salesperson is None or salesperson.role == models.UserRole.warehouse:
         raise HTTPException(status_code=400, detail="Invalid salesperson")
 
-    from datetime import datetime as _dt
     delivery_dt = None
     if payload.delivery_date:
-        delivery_dt = _dt.combine(payload.delivery_date, _dt.min.time())
+        delivery_dt = datetime.combine(payload.delivery_date, datetime.min.time())
 
     order = models.Order(
         customer_id=payload.customer_id,
@@ -147,7 +146,6 @@ def update_order_details(order_id: int, payload: schemas.OrderDetailsUpdate,
         raise HTTPException(status_code=400, detail="Only draft orders can be updated")
 
     if payload.delivery_date is not None:
-        from datetime import datetime
         order.delivery_date = datetime.combine(payload.delivery_date,
                                                datetime.min.time())
     if payload.order_notes is not None:
@@ -172,31 +170,13 @@ def submit_order(order_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Cannot submit an empty order")
 
     # Reserve/deduct stock now that the order is being submitted.
-    print(f"[SUBMIT] Order #{order_id}: {len(order.line_items)} lines, salesperson #{order.salesperson_id}")
     try:
         stock.deduct_on_submit(db, order)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     order.status = models.OrderStatus.submitted
-    print(f"[SUBMIT] Order #{order_id}: committing changes now...")
     db.commit()
-    print(f"[SUBMIT] Order #{order_id}: commit done, verifying allocation...")
-
-    # Verify: re-read allocations to confirm they persisted
-    for line in order.line_items:
-        product = db.query(models.Product).get(line.product_id)
-        if product.allocation_mode != models.AllocationMode.fcfs:
-            alloc = db.query(models.Allocation).filter(
-                models.Allocation.salesperson_id == order.salesperson_id,
-                models.Allocation.product_id == line.product_id,
-            ).first()
-            if alloc:
-                print(f"[SUBMIT]   VERIFY product #{line.product_id}: "
-                      f"allocated={alloc.allocated_qty} used={alloc.used_qty} remaining={alloc.remaining_qty}")
-            else:
-                print(f"[SUBMIT]   VERIFY product #{line.product_id}: NO ALLOCATION ROW FOUND")
-
     db.refresh(order)
     return order
 

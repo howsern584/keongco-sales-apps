@@ -82,17 +82,6 @@ def _bulk_prev_prices(db):
     return {r.product_id: r.old_price for r in rows}
 
 
-def _bulk_stock(db):
-    """Return {product_id: total_qty} summed across all lots in one query."""
-    from sqlalchemy import func as _f
-    rows = (
-        db.query(models.Lot.product_id, _f.sum(models.Lot.qty_on_hand).label("total"))
-        .group_by(models.Lot.product_id)
-        .all()
-    )
-    return {r.product_id: int(r.total) for r in rows}
-
-
 def render(name: str, **ctx) -> HTMLResponse:
     """Render a Jinja2 template and return an HTMLResponse."""
     return HTMLResponse(_env.get_template(name).render(**ctx))
