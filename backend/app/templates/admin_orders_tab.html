@@ -1,0 +1,20 @@
+{# All Orders tab — HTML fragment, fetched lazily on first tab click by loadOrders().
+   Kept out of the main admin page so the initial DOM stays light (~200 nodes). #}
+{% for order in all_orders %}
+<a href="/app/orders/{{ order.id }}"
+   class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
+  <div class="flex items-center justify-between mb-1">
+    <span class="font-semibold"># {{ order.id }} — {{ order.customer_name }}</span>
+    <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">
+      {{ order.status | replace('_',' ') | title }}
+    </span>
+  </div>
+  <div class="text-sm text-gray-500 flex justify-between">
+    <span>{{ order.salesperson_name }}</span>
+    <span>RM {{ "%.2f" | format(order.total) }}</span>
+  </div>
+  <div class="text-xs text-gray-400 mt-1">{{ order.created_at[:10] }}</div>
+</a>
+{% else %}
+<p class="text-center text-gray-400 mt-8 text-sm">No orders yet.</p>
+{% endfor %}

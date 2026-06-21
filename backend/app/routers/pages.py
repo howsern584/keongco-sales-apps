@@ -463,11 +463,9 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
         for a, sp, pr in alerts_raw
     ]
 
-    # Prices tab needs products + prev price map
-    products       = _sort_products(db.query(models.Product).all())
-    prev_price_map = _bulk_prev_prices(db)
-
-    # Users tab needs salesperson list + groups (server-side rendered)
+    # Customers + Users tabs need the salesperson list + groups (server-side rendered).
+    # The heavy All Orders and Prices tabs are loaded lazily (see /admin/tab/orders
+    # and /admin/tab/prices) so the initial admin DOM stays light.
     salesperson_users = db.query(models.User).filter(
         models.User.role == models.UserRole.salesperson,
         models.User.is_active.is_(True),
@@ -481,10 +479,7 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
 
     return render("admin.html",
         pending_orders=orders_summary_query(db, status=models.OrderStatus.submitted, order_asc=True),
-        all_orders=orders_summary_query(db, limit=200),
         stock_alerts=stock_alerts,
-        products=products,
-        prev_price_map=prev_price_map,
         salesperson_users=salesperson_users,
         all_groups=all_groups,
         group_members=group_members,
@@ -494,6 +489,38 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
 
 
 # ---------- Admin lazy-data endpoints ----------------------------------------
+
+@router.get("/admin/tab/orders", response_class=HTMLResponse)
+def admin_tab_orders(request: Request, db: Session = Depends(get_db)):
+    """All Orders tab HTML fragment — fetched lazily on first tab click.
+    Capped at the 300 most-recent orders so the page stays light."""
+    user, redirect = login_required(request, db)
+    if redirect:
+        return redirect
+    if user.role != models.UserRole.admin:
+        return HTMLResponse("", status_code=403)
+
+    return HTMLResponse(_env.get_template("admin_orders_tab.html").render(
+        all_orders=orders_summary_query(db, limit=200),
+    ))
+
+
+@router.get("/admin/tab/prices", response_class=HTMLResponse)
+def admin_tab_prices(request: Request, db: Session = Depends(get_db)):
+    """Prices tab HTML fragment — fetched lazily on first tab click."""
+    user, redirect = login_required(request, db)
+    if redirect:
+        return redirect
+    if user.role != models.UserRole.admin:
+        return HTMLResponse("", status_code=403)
+
+    products       = _sort_products(db.query(models.Product).all())
+    prev_price_map = _bulk_prev_prices(db)
+    return HTMLResponse(_env.get_template("admin_prices_tab.html").render(
+        products=products,
+        prev_price_map=prev_price_map,
+    ))
+
 
 @router.get("/admin/tab/allocations", response_class=HTMLResponse)
 def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
