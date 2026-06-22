@@ -10,6 +10,7 @@ Topping up a salesperson's allocation automatically clears (resolves) any open
 alert for that salesperson + product, closing the loop you described.
 """
 
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -335,6 +336,133 @@ def clear_allocations(product_id: int, db: Session = Depends(get_db)):
 
     db.commit()
     return {"ok": True, "product_id": product_id}
+
+
+# ── Preset Schedule Settings ──────────────────────────────────────────────────
+
+def _get_or_create_settings(db: Session) -> models.AllocationSettings:
+    """Return the single AllocationSettings row, creating it with defaults if absent."""
+    s = db.query(models.AllocationSettings).first()
+    if s is None:
+        s = models.AllocationSettings()
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+    return s
+
+
+@router.get("/allocation-schedule")
+def get_allocation_schedule(db: Session = Depends(get_db)):
+    """Return the current preset schedule settings."""
+    s = _get_or_create_settings(db)
+    return {
+        "auto_renewal_enabled": s.auto_renewal_enabled,
+        "reset_day":            s.reset_day,
+        "notes":                s.notes or "",
+        "last_run_at":          s.last_run_at.isoformat() if s.last_run_at else None,
+    }
+
+
+class SchedulePayload(BaseModel):
+    auto_renewal_enabled: bool = False
+    reset_day:            Optional[int] = None   # 0=Mon … 6=Sun
+    notes:                Optional[str] = None
+
+
+@router.post("/allocation-schedule")
+def set_allocation_schedule(payload: SchedulePayload, db: Session = Depends(get_db)):
+    """Save the preset schedule settings."""
+    s = _get_or_create_settings(db)
+    s.auto_renewal_enabled = payload.auto_renewal_enabled
+    s.reset_day            = payload.reset_day
+    s.notes                = payload.notes
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/apply-presets")
+def apply_presets(db: Session = Depends(get_db)):
+    """
+    Apply ALL stored presets to allocations in one shot.
+
+    For each product:
+      - Group presets: divide weekly_qty equally among active group members.
+      - Individual presets: set that salesperson's allocation directly.
+    Salespeople with no preset for a product are left untouched.
+    Updates AllocationSettings.last_run_at when done.
+    """
+    preset_rows = db.query(models.ProductPreset).all()
+    if not preset_rows:
+        return {"ok": True, "products_touched": 0, "allocations_set": 0,
+                "message": "No presets are defined yet."}
+
+    # Build a fast lookup of group_id → active member user ids
+    all_sps = db.query(models.User).filter(
+        models.User.role == models.UserRole.salesperson,
+        models.User.is_active.is_(True),
+    ).all()
+    group_members: dict[int, list] = {}
+    for sp in all_sps:
+        if sp.group_id:
+            group_members.setdefault(sp.group_id, []).append(sp)
+
+    # Build a product lookup
+    products = {p.id: p for p in db.query(models.Product).all()}
+
+    products_touched: set[int] = set()
+    allocations_set = 0
+
+    def _upsert_alloc(sp_id: int, prod_id: int, qty: int, product):
+        """Set (or create) one allocation row."""
+        alloc = (
+            db.query(models.Allocation)
+            .filter_by(salesperson_id=sp_id, product_id=prod_id)
+            .first()
+        )
+        if alloc:
+            alloc.allocated_qty = qty
+            alloc.used_qty      = 0
+            alloc.remaining_qty = qty
+            alloc.allocation_mode = product.allocation_mode
+        else:
+            db.add(models.Allocation(
+                salesperson_id=sp_id,
+                product_id=prod_id,
+                allocated_qty=qty,
+                used_qty=0,
+                remaining_qty=qty,
+                allocation_mode=product.allocation_mode,
+            ))
+
+    for preset in preset_rows:
+        product = products.get(preset.product_id)
+        if product is None:
+            continue
+        products_touched.add(preset.product_id)
+
+        if preset.group_id:
+            members = group_members.get(preset.group_id, [])
+            if not members:
+                continue
+            share = max(1, preset.weekly_qty // len(members))
+            for sp in members:
+                _upsert_alloc(sp.id, preset.product_id, share, product)
+                allocations_set += 1
+
+        elif preset.user_id:
+            _upsert_alloc(preset.user_id, preset.product_id, preset.weekly_qty, product)
+            allocations_set += 1
+
+    # Update last_run_at
+    s = _get_or_create_settings(db)
+    s.last_run_at = datetime.utcnow()
+    db.commit()
+
+    return {
+        "ok": True,
+        "products_touched": len(products_touched),
+        "allocations_set":  allocations_set,
+    }
 
 
 @router.get("/stock-alerts", response_model=List[schemas.StockAlertOut])

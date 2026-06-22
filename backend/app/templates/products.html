@@ -60,7 +60,7 @@
       <div class="text-xs font-bold text-gray-400 uppercase tracking-wider px-1 mb-1 cat-label">
         {{ cat_labels.get(cat, cat.upper()) }}
       </div>
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-50 md:grid md:grid-cols-2 md:gap-px md:bg-gray-100 md:divide-y-0 md:overflow-hidden">
 
         {% for p in ns.items %}
         {% set prev = prev_price_map.get(p.id) %}
@@ -71,7 +71,7 @@
         {% set pool_avail = pool.available_qty if (pool and pool.total_qty > 0) else 0 %}
         {% set total_avail = alloc_rem + pool_avail %}
 
-        <div class="product-card px-3 py-2.5 cursor-pointer active:bg-gray-50"
+        <div class="product-card px-3 py-2.5 cursor-pointer active:bg-gray-50 md:bg-white"
              data-name="{{ p.description | lower }} {{ p.sage_item_code | lower }}"
              onclick="openDetail(
                {{ p.id }},

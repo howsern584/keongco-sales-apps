@@ -40,7 +40,7 @@
   </header>
 
   <!-- Page content injected here -->
-  <main class="max-w-lg mx-auto px-4 pt-4">
+  <main class="max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto px-4 pt-4">
     {% block content %}{% endblock %}
   </main>
 
@@ -136,6 +136,7 @@
 
     function buildSearchable(sel) {
       if (sel.dataset.kcUpgraded || SKIP_IDS.includes(sel.id)) return;
+      if (sel.dataset.kcNative) return;
       if (sel.closest('.kc-select-wrapper')) return;
       sel.dataset.kcUpgraded = '1';
       sel.style.display = 'none';  // hide original

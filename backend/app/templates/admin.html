@@ -51,7 +51,7 @@
 <!-- ── Pending orders ── -->
 <div id="pane-pending">
   {% if pending_orders %}
-  <div class="space-y-3">
+  <div class="space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
     {% for order in pending_orders %}
     <a href="/app/orders/{{ order.id }}"
        class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
@@ -290,6 +290,7 @@
       <div>
         <label class="block text-xs text-gray-500 mb-1">Role</label>
         <select id="new-user-role"
+                data-kc-native="1"
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
           <option value="salesperson">Salesperson</option>
           <option value="admin">Admin</option>
@@ -445,7 +446,7 @@ function showTab(name) {
   if (name === 'prices')      loadPrices();
   if (name === 'reports')  loadReports();
   if (name === 'customers' && _allCustomers.length === 0) loadCustomers();
-  if (name === 'users')    loadUsers();
+  if (name === 'users' && !_usersLoaded) { _usersLoaded = true; loadUsers(); }
 }
 
 // ── All Orders tab (lazy) ─────────────────────────────────────────────────────
@@ -489,6 +490,8 @@ async function loadAllocations() {
   content.innerHTML = html;
   content.classList.remove('hidden');
 }
+
+let _usersLoaded = false;
 
 // ── Reports tab (lazy) ────────────────────────────────────────────────────────
 let _reportsLoaded = false;
@@ -850,6 +853,48 @@ function showAllocMsg(text, success) {
   el.classList.remove('hidden');
 }
 
+// ── Preset Schedule ───────────────────────────────────────────────────────────
+
+async function applyAllPresets() {
+  if (!confirm('Apply all presets now?\n\nThis will reset every product\'s allocations to its stored preset quantities and set used qty back to 0.')) return;
+  const r = await fetch('/admin/apply-presets', { method: 'POST' });
+  const data = await r.json();
+  if (r.ok) {
+    const ts = new Date().toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const el = document.getElementById('preset-last-applied');
+    if (el) el.textContent = ts;
+    alert(`Done! Applied presets for ${data.products_touched} product(s), set ${data.allocations_set} allocation(s).`);
+    // Reload the allocations tab to reflect the new values
+    _allocLoaded = false;
+    loadAllocations();
+  } else {
+    alert(data.detail || 'Failed to apply presets.');
+  }
+}
+
+async function savePresetSchedule() {
+  const dayEl   = document.getElementById('preset-reset-day');
+  const notesEl = document.getElementById('preset-notes');
+  const day     = dayEl.value === '' ? null : parseInt(dayEl.value);
+  const body    = { auto_renewal_enabled: day !== null, reset_day: day, notes: notesEl.value.trim() || null };
+  const r = await fetch('/admin/allocation-schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const msgEl = document.getElementById('preset-schedule-msg');
+  if (r.ok) {
+    msgEl.textContent = '✓ Schedule saved.';
+    msgEl.classList.remove('hidden', 'text-red-600');
+    msgEl.classList.add('text-green-600');
+    setTimeout(() => msgEl.classList.add('hidden'), 3000);
+  } else {
+    msgEl.textContent = 'Failed to save.';
+    msgEl.classList.remove('hidden', 'text-green-600');
+    msgEl.classList.add('text-red-600');
+  }
+}
+
 // Restore last-used reset qty values after page reload
 document.querySelectorAll('[id^="reset-qty-"]').forEach(input => {
   const pid = input.id.replace('reset-qty-', '');
@@ -946,6 +991,7 @@ async function loadUsers() {
           <div class="flex items-center gap-1 mt-1">
             <span class="text-xs text-gray-400 shrink-0">Group:</span>
             <select onchange="assignGroup(${u.id}, this.value)"
+                    data-kc-native="1"
                     class="text-xs border border-gray-200 rounded px-1 py-0 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white">
               ${groupOptionsForUser}
             </select>
@@ -988,6 +1034,7 @@ async function loadUsers() {
             <div>
               <label class="text-xs text-gray-500 font-medium">Role</label>
               <select id="edit-role-${u.id}"
+                      data-kc-native="1"
                       class="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
                 <option value="salesperson" ${u.role==='salesperson'?'selected':''}>Salesperson</option>
                 <option value="admin"       ${u.role==='admin'      ?'selected':''}>Admin</option>

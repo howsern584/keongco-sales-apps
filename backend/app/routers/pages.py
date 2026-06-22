@@ -599,6 +599,14 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
         elif r.group_id:
             preset_map[(r.product_id, 'group', r.group_id)] = r.weekly_qty
 
+    # Preset schedule settings (create row with defaults if absent)
+    schedule = db.query(models.AllocationSettings).first()
+    if schedule is None:
+        schedule = models.AllocationSettings()
+        db.add(schedule)
+        db.commit()
+        db.refresh(schedule)
+
     return HTMLResponse(_env.get_template("admin_alloc_tab.html").render(
         salespeople=salespeople,
         products=products,
@@ -609,6 +617,7 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
         all_groups=all_groups,
         group_members=group_members,
         preset_map=preset_map,
+        schedule=schedule,
     ))
 
 

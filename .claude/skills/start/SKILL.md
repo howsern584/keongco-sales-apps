@@ -13,10 +13,21 @@ from the project root (cd there first).
    GitHub, never Dropbox). If the pull reports a conflict, STOP and show it to the
    user — do not start the server until it's resolved.
 
-2. **Free port 8000 if a stale server is squatting on it.** A leftover `python.exe`
-   can hold port 8000 and serve *old* code (this has bitten us before). Check and
-   kill it if present, e.g. (PowerShell):
-   `Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`
+2. **Free port 8000 if a stale server is squatting on it.** A leftover server can
+   hold port 8000 and serve *old* code (this has bitten us before). uvicorn `--reload`
+   runs as a **parent reloader + a worker child**, so killing only the listed
+   `OwningProcess` (the parent) leaves the worker holding the inherited socket — the
+   port then shows as in-use by a PID that no longer exists. Kill the stray python
+   processes and verify the port is actually free (PowerShell):
+   ```powershell
+   Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+   Start-Sleep -Milliseconds 1000
+   $c = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+   if ($c) { "STILL IN USE: $($c.OwningProcess -join ',')" } else { "Port 8000 free" }
+   ```
+   Caveat: `Stop-Process python` kills ALL python processes on the machine. That's
+   fine here (this project is the only python server in use), but if the user is
+   running other python work, narrow it to the offending PID's process tree instead.
 
 3. **Launch the server** via the Claude Preview tool: `preview_start` with name
    `keongco-backend` (configured in `.claude/launch.json` — runs uvicorn with

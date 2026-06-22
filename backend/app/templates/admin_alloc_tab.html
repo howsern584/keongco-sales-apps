@@ -1,5 +1,63 @@
 {# Allocation tab fragment — rendered by /admin/tab/allocations and injected into pane-allocations #}
 
+<!-- ── Preset Schedule Settings ── -->
+<div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-4">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="font-semibold text-indigo-800 text-sm">Preset Schedule</h3>
+    <span class="text-xs text-indigo-500">
+      Last applied:
+      <span id="preset-last-applied" class="font-medium">
+        {% if schedule and schedule.last_run_at %}
+          {{ schedule.last_run_at.strftime('%d %b %Y %H:%M') }}
+        {% else %}
+          Never
+        {% endif %}
+      </span>
+    </span>
+  </div>
+
+  <!-- Apply All Presets button -->
+  <button onclick="applyAllPresets()"
+          class="w-full bg-indigo-600 text-white font-semibold py-3 rounded-xl hover:bg-indigo-700 transition mb-3 text-sm">
+    Apply All Presets Now
+  </button>
+  <p class="text-xs text-indigo-500 text-center mb-4 -mt-1">
+    Resets every product's allocations to its stored preset quantities in one click.
+  </p>
+
+  <!-- Schedule settings (informational) -->
+  <div class="border-t border-indigo-200 pt-3 space-y-2">
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-medium text-indigo-700 w-24 shrink-0">Reset cadence</label>
+      <select id="preset-reset-day"
+              class="flex-1 border border-indigo-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+        <option value="" {% if not schedule or schedule.reset_day is none %}selected{% endif %}>Manual only</option>
+        <option value="0" {% if schedule and schedule.reset_day == 0 %}selected{% endif %}>Every Monday</option>
+        <option value="1" {% if schedule and schedule.reset_day == 1 %}selected{% endif %}>Every Tuesday</option>
+        <option value="2" {% if schedule and schedule.reset_day == 2 %}selected{% endif %}>Every Wednesday</option>
+        <option value="3" {% if schedule and schedule.reset_day == 3 %}selected{% endif %}>Every Thursday</option>
+        <option value="4" {% if schedule and schedule.reset_day == 4 %}selected{% endif %}>Every Friday</option>
+        <option value="5" {% if schedule and schedule.reset_day == 5 %}selected{% endif %}>Every Saturday</option>
+        <option value="6" {% if schedule and schedule.reset_day == 6 %}selected{% endif %}>Every Sunday</option>
+      </select>
+    </div>
+    <div class="flex items-start gap-2">
+      <label class="text-xs font-medium text-indigo-700 w-24 shrink-0 pt-1.5">Notes</label>
+      <input id="preset-notes" type="text" placeholder="e.g. Every Monday after delivery"
+             value="{{ schedule.notes if schedule and schedule.notes else '' }}"
+             class="flex-1 border border-indigo-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+    </div>
+    <button onclick="savePresetSchedule()"
+            class="w-full border border-indigo-300 text-indigo-700 font-medium py-2 rounded-xl hover:bg-indigo-100 transition text-xs">
+      Save Schedule Settings
+    </button>
+    <p id="preset-schedule-msg" class="hidden text-xs text-center text-green-600 font-medium"></p>
+    <p class="text-xs text-indigo-400 text-center">
+      Automatic execution is not set up yet — this records your intended cadence only.
+    </p>
+  </div>
+</div>
+
 <!-- Set allocation form -->
 <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4">
   <h3 class="font-semibold text-gray-800 mb-3">Set / Top-Up Allocation</h3>

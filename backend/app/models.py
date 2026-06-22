@@ -262,15 +262,17 @@ class StockAlert(Base):
 
 
 class AllocationSettings(Base):
-    """Global settings for the automatic weekly allocation engine."""
+    """Global settings for the preset schedule. One row only (id=1)."""
     __tablename__ = "allocation_settings"
 
     id                   = Column(Integer, primary_key=True)
-    weeks_lookback       = Column(Integer,  default=5,     nullable=False)  # how many past weeks to average
-    low_stock_threshold  = Column(Integer,  default=15000, nullable=False)  # units; skip auto-alloc below this
-    auto_renewal_enabled = Column(Boolean,  default=True,  nullable=False)  # master on/off
-    last_run_at          = Column(DateTime, nullable=True)
-    next_run_at          = Column(DateTime, nullable=True)
+    weeks_lookback       = Column(Integer,  default=5,     nullable=False)  # reserved (unused)
+    low_stock_threshold  = Column(Integer,  default=15000, nullable=False)  # reserved (unused)
+    auto_renewal_enabled = Column(Boolean,  default=False, nullable=False)  # True = a schedule is set
+    last_run_at          = Column(DateTime, nullable=True)   # when "Apply All Presets" was last run
+    next_run_at          = Column(DateTime, nullable=True)   # informational only (no auto-runner yet)
+    reset_day            = Column(Integer,  nullable=True)   # 0=Mon … 6=Sun; None = manual only
+    notes                = Column(String,   nullable=True)   # admin note, e.g. "Every Monday after delivery"
     updated_at           = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
