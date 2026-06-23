@@ -10,11 +10,13 @@ Topping up a salesperson's allocation automatically clears (resolves) any open
 alert for that salesperson + product, closing the loop you described.
 """
 
-from datetime import datetime
+import math
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func as _func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -349,6 +351,112 @@ def _get_or_create_settings(db: Session) -> models.AllocationSettings:
         db.commit()
         db.refresh(s)
     return s
+
+
+@router.post("/auto-calculate-presets")
+def auto_calculate_presets(db: Session = Depends(get_db)):
+    """
+    Performance Share formula (proportional allocation):
+      For each product × salesperson:
+        share%       = rep's 8-week sales / team's 8-week sales for that product
+        preset_qty   = ceil_to_10(0.85 × total_stock_on_hand × share%)
+        cap          = 4 000 bags/week per person per product
+
+    85% of stock is used (not 100%) to keep a buffer.
+    Result is always rounded UP to the nearest 10.
+    Only salespeople who have sold the product in the last 8 weeks get a preset.
+    Existing presets for salespeople with no recent sales are left unchanged.
+    """
+    WEEKS_LOOKBACK = 8
+    MAX_QTY = 4000
+    cutoff = datetime.utcnow() - timedelta(weeks=WEEKS_LOOKBACK)
+
+    salespeople = db.query(models.User).filter(
+        models.User.role == models.UserRole.salesperson,
+        models.User.is_active.is_(True),
+    ).all()
+    sp_ids = [sp.id for sp in salespeople]
+    if not sp_ids:
+        return {"ok": True, "products_touched": 0, "presets_set": 0,
+                "message": "No active salespeople found."}
+
+    products = db.query(models.Product).filter(
+        models.Product.status == models.ProductStatus.active
+    ).all()
+
+    # Stock on hand per product: sum across all lots
+    stock_rows = (
+        db.query(models.Lot.product_id, _func.sum(models.Lot.qty_on_hand).label("total"))
+        .group_by(models.Lot.product_id)
+        .all()
+    )
+    stock_map = {r.product_id: int(r.total) for r in stock_rows}
+
+    # 4-week sales per (salesperson, product)
+    sales_rows = (
+        db.query(
+            models.Order.salesperson_id,
+            models.OrderLineItem.product_id,
+            _func.sum(models.OrderLineItem.quantity).label("qty"),
+        )
+        .join(models.OrderLineItem, models.OrderLineItem.order_id == models.Order.id)
+        .filter(
+            models.Order.salesperson_id.in_(sp_ids),
+            models.Order.status.in_([
+                models.OrderStatus.submitted,
+                models.OrderStatus.approved,
+                models.OrderStatus.pushed_to_sage,
+            ]),
+            models.Order.created_at >= cutoff,
+        )
+        .group_by(models.Order.salesperson_id, models.OrderLineItem.product_id)
+        .all()
+    )
+    # sales_by_product[product_id][sp_id] = qty
+    sales_by_product: dict[int, dict[int, int]] = {}
+    for row in sales_rows:
+        sales_by_product.setdefault(row.product_id, {})[row.salesperson_id] = int(row.qty)
+
+    products_touched = 0
+    presets_set = 0
+
+    for product in products:
+        total_stock = stock_map.get(product.id, 0)
+        if total_stock == 0:
+            continue
+        sp_sales = sales_by_product.get(product.id, {})
+        team_total = sum(sp_sales.values())
+        if team_total == 0:
+            continue
+
+        products_touched += 1
+        for sp in salespeople:
+            rep_qty = sp_sales.get(sp.id, 0)
+            if rep_qty == 0:
+                continue
+            share = rep_qty / team_total
+            raw = 0.85 * total_stock * share
+            preset_qty = min(math.ceil(raw / 10) * 10, MAX_QTY)  # 85% stock, round up to 10, cap
+            if preset_qty == 0:
+                continue
+
+            existing = (
+                db.query(models.ProductPreset)
+                .filter_by(product_id=product.id, user_id=sp.id)
+                .first()
+            )
+            if existing:
+                existing.weekly_qty = preset_qty
+            else:
+                db.add(models.ProductPreset(
+                    product_id=product.id,
+                    user_id=sp.id,
+                    weekly_qty=preset_qty,
+                ))
+            presets_set += 1
+
+    db.commit()
+    return {"ok": True, "products_touched": products_touched, "presets_set": presets_set}
 
 
 @router.get("/allocation-schedule")

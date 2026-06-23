@@ -33,6 +33,18 @@
   </div>
 </div>
 
+<!-- Customer info — auto-filled from the customer master once selected -->
+<div id="customer-info-panel" class="hidden mb-3">
+  <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900 space-y-1">
+    <div id="ci-contact"  class="hidden"><span class="text-blue-400">Contact:</span> <span class="font-medium"></span></div>
+    <div id="ci-address"  class="hidden"><span class="text-blue-400">Deliver to:</span> <span class="font-medium"></span></div>
+    <div class="flex gap-4">
+      <div id="ci-term"   class="hidden"><span class="text-blue-400">Terms:</span> <span class="font-medium"></span></div>
+      <div id="ci-credit" class="hidden"><span class="text-blue-400">Credit limit:</span> <span class="font-medium"></span></div>
+    </div>
+  </div>
+</div>
+
 <!-- Customer order history (shown after customer selected) -->
 <div id="history-panel" class="hidden mb-3">
   <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -501,11 +513,14 @@
       </div>
     </div>
 
-    <!-- Notes (shown once customer selected, single compact row) -->
-    <div id="notes-section" class="hidden mb-2">
+    <!-- Customer PO + Notes (shown once customer selected) -->
+    <div id="notes-section" class="hidden mb-2 flex gap-2">
+      <input id="customer-po" type="text"
+             placeholder="Customer PO / Contract (optional)"
+             class="w-44 shrink-0 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand bg-gray-50"/>
       <input id="order-notes" type="text"
              placeholder="Notes — e.g. deliver before 8am, call on arrival…"
-             class="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand bg-gray-50"/>
+             class="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand bg-gray-50"/>
     </div>
 
     <!-- Action buttons -->
@@ -756,15 +771,48 @@ async function selectCustomer(id, name) {
   document.getElementById('selected-customer').classList.remove('hidden');
   hideResults();
   await loadHistory(id);
+  // Negotiated prices win over "last price paid", so apply them after history.
+  await loadCustomerPrices(id);
+  loadCustomerInfo(id);
 }
 
 function clearCustomer() {
   selectedCustomerId = null;
   _lastPrices = {};
+  _customerPrices = {};
   resetPricesToBase();
   document.getElementById('selected-customer').classList.add('hidden');
   document.getElementById('history-panel').classList.add('hidden');
   document.getElementById('history-list').innerHTML = '';
+  document.getElementById('customer-info-panel').classList.add('hidden');
+}
+
+// ── Customer master auto-fill panel ───────────────────────────────────────
+async function loadCustomerInfo(id) {
+  const panel = document.getElementById('customer-info-panel');
+  let c;
+  try {
+    const r = await fetch(`/customers/${id}`);
+    if (!r.ok) { panel.classList.add('hidden'); return; }
+    c = await r.json();
+  } catch (e) { panel.classList.add('hidden'); return; }
+
+  const setRow = (rowId, value) => {
+    const row = document.getElementById(rowId);
+    const span = row.querySelector('.font-medium');
+    if (value) { span.textContent = value; row.classList.remove('hidden'); }
+    else { row.classList.add('hidden'); }
+  };
+  const contactBits = [c.contact_person, c.contact].filter(Boolean).join(' · ');
+  setRow('ci-contact', contactBits);
+  setRow('ci-address', c.delivery_address);
+  setRow('ci-term', c.payment_term);
+  setRow('ci-credit', c.credit_limit != null ? `RM ${Number(c.credit_limit).toFixed(2)}` : '');
+
+  // Show the panel only if at least one field is present.
+  const anyShown = ['ci-contact','ci-address','ci-term','ci-credit']
+    .some(rid => !document.getElementById(rid).classList.contains('hidden'));
+  panel.classList.toggle('hidden', !anyShown);
 }
 
 function hideResults() {
@@ -777,6 +825,31 @@ document.addEventListener('click', e => {
 // ── Customer history & last-price map ─────────────────────────────────────
 // Keyed by product_id → last unit price this customer paid.
 let _lastPrices = {};
+// Keyed by product_id → negotiated price for this customer (highest priority).
+let _customerPrices = {};
+
+/**
+ * Fetch this customer's negotiated price overrides and apply them.
+ * These take priority over both base price and "last price paid".
+ */
+async function loadCustomerPrices(customerId) {
+  _customerPrices = {};
+  try {
+    const r = await fetch(`/customers/${customerId}/prices`);
+    if (r.ok) _customerPrices = await r.json();   // {product_id: unit_price}
+  } catch (e) { /* leave empty on failure */ }
+  applyCustomerPrices();
+}
+
+function applyCustomerPrices() {
+  Object.entries(_customerPrices).forEach(([pid, price]) => {
+    const simple = document.getElementById(`simple-price-${pid}`);
+    const detail = document.getElementById(`price-${pid}`);
+    if (simple) simple.value = Number(price).toFixed(2);
+    if (detail) detail.value = Number(price).toFixed(2);
+  });
+  updateTotal();
+}
 
 async function loadHistory(customerId) {
   const res = await fetch(`/customers/${customerId}/history`);
@@ -1006,6 +1079,7 @@ async function buildOrder(submit) {
   const deliveryDateVal = document.getElementById('delivery-date').value;
   const orderNotesVal   = document.getElementById('order-notes').value.trim();
   const transportVal    = document.getElementById('transport').value.trim();
+  const customerPoVal   = document.getElementById('customer-po').value.trim();
   if (submit && !deliveryDateVal) {
     showToast('Please set a delivery date before submitting.');
     document.getElementById('delivery-date').focus();
@@ -1021,6 +1095,7 @@ async function buildOrder(submit) {
       delivery_date: deliveryDateVal || null,
       order_notes: orderNotesVal || null,
       transport: transportVal || null,
+      customer_po: customerPoVal || null,
     }),
   });
   if (!r1.ok) { showToast((await r1.json()).detail || 'Could not create order.'); return; }

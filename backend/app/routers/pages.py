@@ -10,6 +10,8 @@ Authentication in Phase 2 uses a plain session cookie storing the user id.
 (Phase 3 / production should upgrade this to a proper JWT or OAuth flow.)
 """
 
+import re as _re
+
 from fastapi import APIRouter, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
@@ -37,9 +39,20 @@ def _cat_rank(product) -> int:
     except ValueError:
         return len(_CAT_ORDER)   # unknown categories go last
 
+def _nat_key(s: str):
+    """Natural sort key: splits text into alternating string/float parts so that
+    numbers embedded in descriptions sort numerically rather than lexicographically.
+    e.g. 'CILI YD 3KG' < 'CILI YD 10KG'  and  '4.5MM' < '6MM' < '9MM'.
+    """
+    parts = _re.split(r'(\d+(?:\.\d+)?)', s.upper())
+    return [float(p) if _re.fullmatch(r'\d+(?:\.\d+)?', p) else p for p in parts]
+
 def _sort_products(products):
-    """Sort by category order, then unit_weight_kg high-to-low within each category."""
-    return sorted(products, key=lambda p: (_cat_rank(p), -(p.unit_weight_kg or 0)))
+    """Sort by category order, then natural sort on description within each category.
+    Natural sort means numbers inside names are compared numerically:
+    '4.5MM' < '6MM', '3KG' < '10KG', etc.
+    """
+    return sorted(products, key=lambda p: (_cat_rank(p), _nat_key(p.description)))
 
 
 def _bulk_lots(db, product_ids=None):
@@ -291,12 +304,12 @@ def new_order_page(request: Request, db: Session = Depends(get_db)):
 
     # Sort:  1) most-ordered items first (regulars)
     #        2) never-ordered items grouped by canonical category order (ON→SH→GI→PO→GA→CO→PA→BE→SP→DC)
-    #        3) alphabetical within each category
+    #        3) natural sort on description within each tier/category
     products.sort(key=lambda p: (
         0 if order_freq[p.id] > 0 else 1,   # regulars before newcomers
         -order_freq[p.id],                   # highest qty first within regulars
         _cat_rank(p),                        # canonical category sequence
-        -(p.unit_weight_kg or 0),            # heavy items first within category
+        _nat_key(p.description),             # description → size → weight (natural numeric sort)
     ))
 
     from datetime import date as _date

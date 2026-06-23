@@ -28,6 +28,11 @@ class CustomerIn(BaseModel):
     pricing_tier: Optional[str] = None
     contact: Optional[str] = None
     whatsapp: Optional[str] = None
+    # Mirrored Sage profile fields
+    contact_person: Optional[str] = None
+    delivery_address: Optional[str] = None
+    payment_term: Optional[str] = None
+    credit_limit: Optional[float] = None
 
 
 class CustomerOut(BaseModel):
@@ -40,9 +45,19 @@ class CustomerOut(BaseModel):
     is_active: bool
     salesperson_id: Optional[int] = None
     salesperson_name: Optional[str] = None  # populated at query time, not a DB column
+    # Mirrored Sage profile fields
+    contact_person: Optional[str] = None
+    delivery_address: Optional[str] = None
+    payment_term: Optional[str] = None
+    credit_limit: Optional[float] = None
 
     class Config:
         from_attributes = True
+
+
+class CustomerPriceIn(BaseModel):
+    product_id: int
+    unit_price: float
 
 
 # ---------- Helper -----------------------------------------------------------
@@ -76,9 +91,14 @@ def search_customers(request: Request, q: str = "", db: Session = Depends(get_db
     return query.order_by(models.Customer.name).limit(30).all()
 
 
-@router.get("", response_model=list[CustomerOut])
+@router.get("/manage", response_model=list[CustomerOut])
 def list_customers(request: Request, db: Session = Depends(get_db)):
-    """Return all customers with their assigned salesperson — admin only."""
+    """Return all customers with full profile + assigned salesperson — admin only.
+
+    NOTE: this lives at /customers/manage, not /customers, because catalog.py also
+    registers GET /customers (the lean, active-only list the order dropdown uses) and
+    is included first, so it would shadow this richer admin list. The admin Customers
+    tab calls /customers/manage explicitly."""
     require_admin(request, db)
     rows = db.query(models.Customer).order_by(models.Customer.name).all()
     # Build salesperson name lookup
@@ -150,6 +170,10 @@ def create_customer(body: CustomerIn, request: Request, db: Session = Depends(ge
         pricing_tier=(body.pricing_tier or "").strip() or None,
         contact=(body.contact or "").strip() or None,
         whatsapp=(body.whatsapp or "").strip() or None,
+        contact_person=(body.contact_person or "").strip() or None,
+        delivery_address=(body.delivery_address or "").strip() or None,
+        payment_term=(body.payment_term or "").strip() or None,
+        credit_limit=body.credit_limit,
         is_active=True,
     )
     db.add(cust)
@@ -180,6 +204,10 @@ def update_customer(customer_id: int, body: CustomerIn,
     cust.pricing_tier = (body.pricing_tier or "").strip() or None
     cust.contact = (body.contact or "").strip() or None
     cust.whatsapp = (body.whatsapp or "").strip() or None
+    cust.contact_person = (body.contact_person or "").strip() or None
+    cust.delivery_address = (body.delivery_address or "").strip() or None
+    cust.payment_term = (body.payment_term or "").strip() or None
+    cust.credit_limit = body.credit_limit
     db.commit()
     db.refresh(cust)
     return cust
@@ -206,4 +234,85 @@ def activate_customer(customer_id: int, request: Request, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Customer not found.")
     cust.is_active = True
     db.commit()
+    return {"ok": True}
+
+
+# ---------- Customer detail (for order-screen auto-fill) ---------------------
+
+@router.get("/{customer_id}", response_model=CustomerOut)
+def get_customer(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    """Return one customer's full profile, so the order screen can auto-fill it.
+    Salespeople may only read their own assigned customers; admins read any."""
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    cust = db.query(models.Customer).get(customer_id)
+    if cust is None:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+    if user.role == models.UserRole.salesperson and cust.salesperson_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your customer.")
+    return cust
+
+
+# ---------- Customer-specific prices -----------------------------------------
+
+@router.get("/{customer_id}/prices")
+def get_customer_prices(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    """Return this customer's negotiated price overrides as {product_id: unit_price}.
+    Sparse — only products with an agreed price differing from list appear here.
+    Used by the order screen to re-price the product list when a customer is chosen."""
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    cust = db.query(models.Customer).get(customer_id)
+    if cust is None:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+    if user.role == models.UserRole.salesperson and cust.salesperson_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your customer.")
+    rows = db.query(models.CustomerPrice).filter(
+        models.CustomerPrice.customer_id == customer_id
+    ).all()
+    return {r.product_id: r.unit_price for r in rows}
+
+
+@router.post("/{customer_id}/prices")
+def upsert_customer_price(customer_id: int, body: CustomerPriceIn,
+                          request: Request, db: Session = Depends(get_db)):
+    """Set (or update) one negotiated price for this customer + product. Admin only."""
+    require_admin(request, db)
+    cust = db.query(models.Customer).get(customer_id)
+    if cust is None:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+    prod = db.query(models.Product).get(body.product_id)
+    if prod is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    if body.unit_price < 0:
+        raise HTTPException(status_code=400, detail="Price cannot be negative.")
+    row = db.query(models.CustomerPrice).filter_by(
+        customer_id=customer_id, product_id=body.product_id
+    ).first()
+    if row:
+        row.unit_price = body.unit_price
+    else:
+        row = models.CustomerPrice(
+            customer_id=customer_id,
+            product_id=body.product_id,
+            unit_price=body.unit_price,
+        )
+        db.add(row)
+    db.commit()
+    return {"ok": True, "product_id": body.product_id, "unit_price": body.unit_price}
+
+
+@router.delete("/{customer_id}/prices/{product_id}")
+def delete_customer_price(customer_id: int, product_id: int,
+                          request: Request, db: Session = Depends(get_db)):
+    """Remove a negotiated price (the product reverts to its list/special price). Admin only."""
+    require_admin(request, db)
+    row = db.query(models.CustomerPrice).filter_by(
+        customer_id=customer_id, product_id=product_id
+    ).first()
+    if row:
+        db.delete(row)
+        db.commit()
     return {"ok": True}

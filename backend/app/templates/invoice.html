@@ -160,6 +160,7 @@
         <p class="bold">{{ customer_name }}</p>
         <p>Customer Code: {{ customer_code }}</p>
         {% if customer_contact %}<p>Tel: {{ customer_contact }}</p>{% endif %}
+        {% if customer_address %}<p>Deliver to: {{ customer_address }}</p>{% endif %}
       </div>
     </td>
     <td>
@@ -167,6 +168,8 @@
         <h4>Invoice Details</h4>
         <p><b>Invoice Date:</b> {{ invoice_date }}</p>
         {% if delivery_date %}<p><b>Delivery Date:</b> {{ delivery_date }}</p>{% endif %}
+        {% if customer_po %}<p><b>Customer PO:</b> {{ customer_po }}</p>{% endif %}
+        {% if payment_term %}<p><b>Terms:</b> {{ payment_term }}</p>{% endif %}
         <p><b>Salesperson:</b> {{ salesperson_name }}</p>
         {% if approved_at %}<p><b>Approved:</b> {{ approved_at }}</p>{% endif %}
         {% if order_notes %}<p><b>Notes:</b> {{ order_notes }}</p>{% endif %}

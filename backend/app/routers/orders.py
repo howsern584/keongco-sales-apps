@@ -50,6 +50,7 @@ def create_order(payload: schemas.OrderCreate, db: Session = Depends(get_db)):
         delivery_date=delivery_dt,
         order_notes=payload.order_notes,
         transport=payload.transport,
+        customer_po=payload.customer_po,
     )
     db.add(order)
     db.commit()
@@ -152,6 +153,8 @@ def update_order_details(order_id: int, payload: schemas.OrderDetailsUpdate,
         order.order_notes = payload.order_notes
     if payload.transport is not None:
         order.transport = payload.transport
+    if payload.customer_po is not None:
+        order.customer_po = payload.customer_po
 
     db.commit()
     db.refresh(order)

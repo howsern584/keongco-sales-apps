@@ -71,6 +71,7 @@ class OrderCreate(BaseModel):
     delivery_date: Optional[date] = None    # requested delivery date
     order_notes: Optional[str] = None       # special instructions
     transport: Optional[str] = None         # e.g. Keongco, Tong Transport
+    customer_po: Optional[str] = None        # buyer's own PO / contract no.
 
 
 class LineItemCreate(BaseModel):
@@ -103,6 +104,7 @@ class OrderDetailsUpdate(BaseModel):
     delivery_date: Optional[date] = None
     order_notes: Optional[str] = None
     transport: Optional[str] = None
+    customer_po: Optional[str] = None
 
 
 class SageRefsUpdate(BaseModel):
@@ -120,6 +122,7 @@ class OrderOut(BaseModel):
     delivery_date: Optional[datetime] = None
     order_notes: Optional[str] = None
     transport: Optional[str] = None
+    customer_po: Optional[str] = None
     approved_by: Optional[int] = None
     approved_at: Optional[datetime] = None
     sage_order_ref: Optional[str] = None

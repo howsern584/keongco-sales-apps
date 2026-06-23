@@ -872,6 +872,22 @@ async function applyAllPresets() {
   }
 }
 
+async function autoCalculatePresets() {
+  if (!confirm('Auto-calculate presets from last 4 weeks of sales?\n\nEach salesperson\'s preset will be set to their proportional share of current stock (capped at 4,000 bags/week per item). Salespeople with no recent sales are left unchanged.')) return;
+  const btn = document.getElementById('auto-calc-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Calculating…'; }
+  const r = await fetch('/admin/auto-calculate-presets', { method: 'POST' });
+  const data = await r.json();
+  if (btn) { btn.disabled = false; btn.textContent = 'Auto-Calculate from Sales History'; }
+  if (r.ok) {
+    alert(`Done! Calculated presets for ${data.products_touched} product(s), set ${data.presets_set} preset(s).`);
+    _allocLoaded = false;
+    loadAllocations();
+  } else {
+    alert(data.detail || 'Failed to calculate presets.');
+  }
+}
+
 async function savePresetSchedule() {
   const dayEl   = document.getElementById('preset-reset-day');
   const notesEl = document.getElementById('preset-notes');
@@ -1193,11 +1209,18 @@ document.getElementById('tab-users') && document.getElementById('tab-users').add
 
 // ── Customers tab ─────────────────────────────────────────────────────────────
 let _allCustomers = [];
+let _openCustomerId = null;       // which customer's edit panel is expanded (one at a time)
+let _pricingProducts = null;      // cached product list for the special-price picker
 
 async function loadCustomers() {
-  const res = await fetch('/customers');
+  const res = await fetch('/customers/manage');
   _allCustomers = await res.json();
-  filterCustomers('');
+  filterCustomers(document.getElementById('cust-search').value || '');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function filterCustomers(q) {
@@ -1212,19 +1235,200 @@ function filterCustomers(q) {
     box.innerHTML = '<div class="py-6 text-center text-gray-400 text-xs">No customers found.</div>';
     return;
   }
-  box.innerHTML = list.map(c => `
-    <div class="flex items-center justify-between px-2 py-2.5 hover:bg-gray-50">
+  box.innerHTML = list.map(c => {
+    const open = c.id === _openCustomerId;
+    return `
+    <div>
+      <div class="flex items-center justify-between px-2 py-2.5 hover:bg-gray-50 cursor-pointer" onclick="toggleCustomer(${c.id})">
+        <div>
+          <div class="font-medium text-gray-800">${esc(c.name)}</div>
+          <div class="text-xs text-gray-400">${esc(c.sage_customer_code)}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-xs text-gray-500">${esc(c.salesperson_name) || '—'}</span>
+          <span class="text-xs px-1.5 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}">
+            ${c.is_active ? 'Active' : 'Inactive'}
+          </span>
+          <svg class="w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </div>
+      </div>
+      ${open ? customerEditPanel(c) : ''}
+    </div>`;
+  }).join('');
+}
+
+function customerEditPanel(c) {
+  const cl = (c.credit_limit == null) ? '' : c.credit_limit;
+  return `
+  <div class="px-3 pb-3 pt-2 bg-gray-50 border-t border-gray-100 space-y-3">
+    <!-- Mirrored Sage profile (manual entry until Sage sync is live) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
       <div>
-        <div class="font-medium text-gray-800">${c.name}</div>
-        <div class="text-xs text-gray-400">${c.sage_customer_code || ''}</div>
+        <label class="block text-xs font-medium text-gray-500 mb-0.5">Contact person</label>
+        <input id="cust-cp-${c.id}" type="text" value="${esc(c.contact_person)}"
+               class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span class="text-xs text-gray-500">${c.salesperson_name || '—'}</span>
-        <span class="text-xs px-1.5 py-0.5 rounded-full ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}">
-          ${c.is_active ? 'Active' : 'Inactive'}
-        </span>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-0.5">Contact number</label>
+        <input id="cust-cn-${c.id}" type="text" value="${esc(c.contact)}"
+               class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
       </div>
+      <div class="md:col-span-2">
+        <label class="block text-xs font-medium text-gray-500 mb-0.5">Delivery address</label>
+        <textarea id="cust-da-${c.id}" rows="2"
+                  class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">${esc(c.delivery_address)}</textarea>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-0.5">Payment term</label>
+        <input id="cust-pt-${c.id}" type="text" placeholder="e.g. CASH, 30 days" value="${esc(c.payment_term)}"
+               class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-0.5">Credit limit (RM)</label>
+        <input id="cust-cl-${c.id}" type="number" min="0" step="0.01" value="${cl}"
+               class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="saveCustomerProfile(${c.id})"
+              class="bg-brand text-white text-xs font-semibold px-4 py-1.5 rounded-lg hover:bg-brand-dark transition">Save Profile</button>
+      <span id="cust-msg-${c.id}" class="hidden text-xs"></span>
+    </div>
+
+    <!-- Negotiated per-customer prices -->
+    <div class="border-t border-gray-200 pt-2">
+      <div class="font-semibold text-xs text-gray-600 mb-1">Special Prices <span class="font-normal text-gray-400">· override list price for this customer</span></div>
+      <div id="cust-prices-${c.id}" class="text-xs text-gray-400">Loading…</div>
+      <div class="flex items-end gap-2 mt-2">
+        <div class="flex-1">
+          <label class="block text-xs text-gray-400 mb-0.5">Product</label>
+          <select id="cust-price-prod-${c.id}"
+                  class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            <option value="">— select product —</option>
+          </select>
+        </div>
+        <div style="width:90px">
+          <label class="block text-xs text-gray-400 mb-0.5">Price RM</label>
+          <input id="cust-price-amt-${c.id}" type="number" min="0" step="0.01"
+                 class="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+        </div>
+        <button onclick="addCustomerPrice(${c.id})"
+                class="bg-indigo-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition shrink-0">Add</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function toggleCustomer(id) {
+  _openCustomerId = (_openCustomerId === id) ? null : id;
+  filterCustomers(document.getElementById('cust-search').value || '');
+  if (_openCustomerId === id) {
+    await ensurePricingProducts();
+    populatePriceProductSelect(id);
+    loadCustomerPricesPanel(id);
+  }
+}
+
+async function ensurePricingProducts() {
+  if (_pricingProducts) return;
+  const r = await fetch('/products');
+  _pricingProducts = r.ok ? await r.json() : [];
+}
+
+function populatePriceProductSelect(id) {
+  const sel = document.getElementById(`cust-price-prod-${id}`);
+  if (!sel || !_pricingProducts) return;
+  sel.innerHTML = '<option value="">— select product —</option>' +
+    _pricingProducts.map(p => `<option value="${p.id}">${esc(p.description)}</option>`).join('');
+}
+
+async function loadCustomerPricesPanel(id) {
+  const box = document.getElementById(`cust-prices-${id}`);
+  if (!box) return;
+  const r = await fetch(`/customers/${id}/prices`);
+  if (!r.ok) { box.innerHTML = '<span class="text-red-500">Failed to load prices.</span>'; return; }
+  const map = await r.json();                       // {product_id: unit_price}
+  const ids = Object.keys(map);
+  await ensurePricingProducts();
+  const nameOf = pid => {
+    const p = (_pricingProducts || []).find(x => String(x.id) === String(pid));
+    return p ? p.description : `Product #${pid}`;
+  };
+  if (!ids.length) {
+    box.innerHTML = '<span class="text-gray-400">No special prices — this customer pays list price.</span>';
+    return;
+  }
+  box.innerHTML = ids.map(pid => `
+    <div class="flex items-center justify-between py-1 border-b border-gray-100 last:border-0">
+      <span class="text-gray-700 truncate pr-2">${esc(nameOf(pid))}</span>
+      <span class="flex items-center gap-2 shrink-0">
+        <span class="font-semibold text-indigo-700">RM ${Number(map[pid]).toFixed(2)}</span>
+        <button onclick="removeCustomerPrice(${id}, ${pid})" class="text-red-500 hover:text-red-700 text-xs">✕</button>
+      </span>
     </div>`).join('');
+}
+
+async function addCustomerPrice(id) {
+  const prodEl = document.getElementById(`cust-price-prod-${id}`);
+  const amtEl  = document.getElementById(`cust-price-amt-${id}`);
+  const productId = parseInt(prodEl.value);
+  const price = parseFloat(amtEl.value);
+  if (!productId) { alert('Pick a product.'); return; }
+  if (isNaN(price) || price < 0) { alert('Enter a valid price.'); return; }
+  const r = await fetch(`/customers/${id}/prices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ product_id: productId, unit_price: price }),
+  });
+  if (r.ok) {
+    prodEl.value = ''; amtEl.value = '';
+    loadCustomerPricesPanel(id);
+  } else {
+    const d = await r.json(); alert(d.detail || 'Failed to save price.');
+  }
+}
+
+async function removeCustomerPrice(id, productId) {
+  const r = await fetch(`/customers/${id}/prices/${productId}`, { method: 'DELETE' });
+  if (r.ok) loadCustomerPricesPanel(id);
+}
+
+async function saveCustomerProfile(id) {
+  const c = _allCustomers.find(x => x.id === id);
+  if (!c) return;
+  const clRaw = document.getElementById(`cust-cl-${id}`).value.trim();
+  const body = {
+    sage_customer_code: c.sage_customer_code,   // keep existing identity fields
+    name: c.name,
+    pricing_tier: c.pricing_tier || null,
+    whatsapp: c.whatsapp || null,
+    contact_person:   document.getElementById(`cust-cp-${id}`).value.trim() || null,
+    contact:          document.getElementById(`cust-cn-${id}`).value.trim() || null,
+    delivery_address: document.getElementById(`cust-da-${id}`).value.trim() || null,
+    payment_term:     document.getElementById(`cust-pt-${id}`).value.trim() || null,
+    credit_limit:     clRaw === '' ? null : parseFloat(clRaw),
+  };
+  const msg = document.getElementById(`cust-msg-${id}`);
+  const r = await fetch(`/customers/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (r.ok) {
+    const updated = await r.json();
+    Object.assign(c, updated);                  // refresh cached copy
+    msg.textContent = '✓ Saved';
+    msg.className = 'text-xs text-green-600';
+    setTimeout(() => { msg.classList.add('hidden'); }, 2500);
+    msg.classList.remove('hidden');
+  } else {
+    const d = await r.json();
+    msg.textContent = d.detail || 'Save failed';
+    msg.className = 'text-xs text-red-600';
+    msg.classList.remove('hidden');
+  }
 }
 
 async function syncCustomersFromSage() {

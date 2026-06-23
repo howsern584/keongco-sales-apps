@@ -14,7 +14,8 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text
+    Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Enum, Text,
+    UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 
@@ -101,17 +102,48 @@ class User(Base):
 
 
 class Customer(Base):
-    """Keongco's customers. Each links to a Sage 300 customer code."""
+    """Keongco's customers. Each links to a Sage 300 customer code.
+
+    The profile fields below MIRROR the Sage customer master (Sage is the source of
+    truth). They are filled in here so order entry can auto-fill them when a customer
+    is selected — exactly like the Sage workflow. For now they are entered manually;
+    once Sage integration (Phase 3) is live they should be synced FROM Sage."""
     __tablename__ = "customers"
 
     id = Column(Integer, primary_key=True)
     sage_customer_code = Column(String, nullable=False)   # the code Sage knows them by
     name = Column(String, nullable=False)
     pricing_tier = Column(String, nullable=True)
-    contact = Column(String, nullable=True)
+    contact = Column(String, nullable=True)    # contact number (phone)
     whatsapp = Column(String, nullable=True)   # international format, no +, e.g. "60123456789"
     is_active = Column(Boolean, default=True)  # soft-delete: False = hidden from new orders
     salesperson_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # owning salesperson
+
+    # ── Mirrored Sage customer-master profile (auto-fills on the order screen) ──
+    contact_person   = Column(String, nullable=True)   # named person at the customer
+    delivery_address = Column(Text,   nullable=True)   # ship-to address (order + invoice)
+    payment_term     = Column(String, nullable=True)   # e.g. "CASH", "30 days"
+    credit_limit     = Column(Float,  nullable=True)   # agreed limit in RM (display only for now)
+
+
+class CustomerPrice(Base):
+    """A negotiated price for ONE customer + ONE product.
+
+    Sparse by design: a row exists only where a customer has an agreed price that
+    differs from the product's list price. Most customers pay the list price and have
+    no row here. Price resolution when entering an order:
+        customer price (here)  ->  product.special_price  ->  product.base_price
+    """
+    __tablename__ = "customer_prices"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "product_id", name="uq_customer_product_price"),
+    )
+
+    id          = Column(Integer, primary_key=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    product_id  = Column(Integer, ForeignKey("products.id"),  nullable=False, index=True)
+    unit_price  = Column(Float, nullable=False)
+    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Product(Base):
@@ -219,6 +251,7 @@ class Order(Base):
     delivery_date = Column(DateTime, nullable=True)       # requested delivery date
     order_notes = Column(Text, nullable=True)             # any special instructions
     transport   = Column(String(100), nullable=True)      # e.g. Keongco, Tong Transport
+    customer_po = Column(String(60), nullable=True)       # buyer's own PO / contract no. (Sage can't infer)
 
     approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # which admin
     approved_at = Column(DateTime, nullable=True)
