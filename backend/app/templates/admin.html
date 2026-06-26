@@ -414,14 +414,96 @@ async function saveInlineAlloc(btn, spId, productId) {
     body: JSON.stringify({ salesperson_id: spId, product_id: productId, allocated_qty: qty }),
   });
   if (r.ok) {
+    const a = await r.json();
     btn.textContent = '✓';
     showAllocMsg(`✓ Saved`, true);
-    setTimeout(() => location.reload(), 600);
+    // Update just this row in place — no full reload, so the page stays
+    // scrolled exactly where you are on the product you just edited.
+    const allocated = a.allocated_qty ?? qty;
+    const remaining = a.remaining_qty ?? allocated;
+    updateAllocRow(input, allocated, remaining);
+    // Setting an individual allocation zeros the product's pool (server-side).
+    clearPoolUI(productId);
+    refreshAllocHeader(productId);
   } else {
     btn.textContent = '✗';
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed', false);
   }
+}
+
+// Refresh the visuals of a single allocation row (progress bar + qty label)
+// from the saved numbers, without reloading the page.
+function updateAllocRow(input, allocated, remaining) {
+  const qtySpan = input.previousElementSibling;       // "rem/alloc" label
+  const bar     = qtySpan ? qtySpan.previousElementSibling : null;  // bar container
+  const pct = allocated > 0 ? Math.round(remaining / allocated * 100) : 0;
+  if (allocated > 0) {
+    const barColor = pct === 0 ? 'bg-red-400' : (pct < 20 ? 'bg-amber-400' : 'bg-brand');
+    if (bar) bar.innerHTML = `<div class="${barColor} rounded-full h-2" style="width:${pct}%"></div>`;
+    if (qtySpan) {
+      qtySpan.textContent = `${remaining}/${allocated}`;
+      qtySpan.className = 'text-xs shrink-0 ' +
+        (remaining === 0 ? 'text-red-500' : (pct < 20 ? 'text-amber-600' : 'text-gray-500'));
+    }
+    input.value = allocated;
+  } else {
+    if (bar) bar.innerHTML = '';
+    if (qtySpan) { qtySpan.textContent = '—/—'; qtySpan.className = 'text-xs text-gray-300 shrink-0'; }
+    input.value = '';
+  }
+  // Keep the row's stored state in sync so the header summary can read it.
+  input.dataset.allocated = allocated;
+  input.dataset.remaining = remaining;
+}
+
+// Rebuild a product's collapsed-header summary (status dot + remaining chips)
+// from the current state of its rows — keeps the header correct without a reload.
+function refreshAllocHeader(productId) {
+  const inputs = document.querySelectorAll(
+    `.alloc-inline-input[data-product-id="${productId}"]`);
+  let setCount = 0, anyZero = false;
+  const remainders = [];
+  inputs.forEach(inp => {
+    const allocated = parseInt(inp.dataset.allocated || '0') || 0;
+    const remaining = parseInt(inp.dataset.remaining || '0') || 0;
+    if (allocated > 0) {
+      setCount++;
+      remainders.push({ remaining, allocated });
+      if (remaining === 0) anyZero = true;
+    }
+  });
+
+  const dot = document.getElementById(`alloc-dot-${productId}`);
+  if (dot) {
+    dot.className = 'w-1.5 h-1.5 rounded-full shrink-0 ' +
+      (anyZero ? 'bg-red-400' : (setCount === 0 ? 'bg-gray-300' : 'bg-brand'));
+  }
+
+  const chips = document.getElementById(`alloc-chips-${productId}`);
+  if (chips) {
+    if (setCount === 0) {
+      chips.innerHTML = '<span class="text-xs text-gray-400 italic">—</span>';
+    } else {
+      let html = '';
+      remainders.slice(0, 3).forEach(({ remaining, allocated }) => {
+        const cls = remaining === 0 ? 'bg-red-100 text-red-600'
+          : (remaining / allocated < 0.2 ? 'bg-amber-100 text-amber-700'
+                                          : 'bg-green-50 text-green-700');
+        html += `<span class="text-xs px-1 py-0 rounded font-medium ${cls}">${remaining}</span>`;
+      });
+      if (setCount > 3) html += `<span class="text-xs text-gray-400">+${setCount - 3}</span>`;
+      chips.innerHTML = html;
+    }
+  }
+}
+
+// Zero a product's pool input + hide its pool bar (reset/clear both zero the pool).
+function clearPoolUI(productId) {
+  const poolInput = document.getElementById(`pool-qty-${productId}`);
+  if (poolInput) poolInput.value = '';
+  const poolBar = document.getElementById(`pool-bar-${productId}`);
+  if (poolBar) { poolBar.innerHTML = ''; poolBar.classList.add('hidden'); }
 }
 
 function showTab(name) {
@@ -770,7 +852,11 @@ async function clearAlloc(productId, productName) {
   const r = await fetch(`/admin/products/${productId}/clear-allocations`, { method: 'POST' });
   if (r.ok) {
     showAllocMsg(`✓ All allocations cleared for "${productName}".`, true);
-    setTimeout(() => location.reload(), 700);
+    // Zero every row for this product in place — no reload, keeps your scroll spot.
+    document.querySelectorAll(`.alloc-inline-input[data-product-id="${productId}"]`)
+      .forEach(inp => updateAllocRow(inp, 0, 0));
+    clearPoolUI(productId);
+    refreshAllocHeader(productId);
   } else {
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed to clear allocations.', false);
@@ -823,7 +909,11 @@ async function resetAllAlloc(productId, productName) {
     const data = await r.json();
     showAllocMsg(`✓ Reset ${data.updated} users to ${qty} ${data.qty === 1 ? 'unit' : 'units'} each.`, true);
     localStorage.setItem(`reset-qty-${productId}`, qty);
-    setTimeout(() => location.reload(), 900);
+    // Update every row for this product in place — no reload, keeps your scroll spot.
+    document.querySelectorAll(`.alloc-inline-input[data-product-id="${productId}"]`)
+      .forEach(inp => updateAllocRow(inp, qty, qty));
+    clearPoolUI(productId);          // reset-all also zeros the pool server-side
+    refreshAllocHeader(productId);
   } else {
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed to reset allocations.', false);
@@ -863,7 +953,9 @@ async function applyAllPresets() {
     const ts = new Date().toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     const el = document.getElementById('preset-last-applied');
     if (el) el.textContent = ts;
-    alert(`Done! Applied presets for ${data.products_touched} product(s), set ${data.allocations_set} allocation(s).`);
+    let msg = `Done! Applied presets for ${data.products_touched} product(s), set ${data.allocations_set} allocation(s).`;
+    if (data.cleared_low_stock) msg += `\nCleared ${data.cleared_low_stock} allocation(s) on products under 1 MT of stock.`;
+    alert(msg);
     // Reload the allocations tab to reflect the new values
     _allocLoaded = false;
     loadAllocations();

@@ -24,6 +24,17 @@ from .. import models, schemas
 
 router = APIRouter(prefix="/admin", tags=["admin: stock control"])
 
+# Products with less than this much stock (in metric tons) are NOT auto-allocated
+# to anyone — too little to bother dividing up. Admin can still set them manually.
+MIN_AUTO_ALLOC_MT = 1.0
+
+
+def _stock_mt(product, units: int) -> float | None:
+    """Convert a unit stock count to metric tons using the product's unit weight.
+    Returns None when the weight is unknown (so the MT rule can't be applied)."""
+    weight = product.unit_weight_kg or 0
+    return (units * weight / 1000.0) if weight > 0 else None
+
 
 @router.post("/allocations", response_model=schemas.AllocationOut)
 def set_allocation(payload: schemas.AllocationSet, db: Session = Depends(get_db)):
@@ -424,6 +435,10 @@ def auto_calculate_presets(db: Session = Depends(get_db)):
         total_stock = stock_map.get(product.id, 0)
         if total_stock == 0:
             continue
+        # Skip products with under 1 MT of stock — too little to auto-allocate.
+        smt = _stock_mt(product, total_stock)
+        if smt is not None and smt < MIN_AUTO_ALLOC_MT:
+            continue
         sp_sales = sales_by_product.get(product.id, {})
         team_total = sum(sp_sales.values())
         if team_total == 0:
@@ -517,8 +532,16 @@ def apply_presets(db: Session = Depends(get_db)):
     # Build a product lookup
     products = {p.id: p for p in db.query(models.Product).all()}
 
+    # Stock-on-hand (units) per product, to skip sub-1-MT products.
+    stock_units = dict(
+        db.query(models.Lot.product_id, _func.sum(models.Lot.qty_on_hand))
+        .group_by(models.Lot.product_id)
+        .all()
+    )
+
     products_touched: set[int] = set()
     allocations_set = 0
+    skipped_low_stock = 0
 
     def _upsert_alloc(sp_id: int, prod_id: int, qty: int, product):
         """Set (or create) one allocation row."""
@@ -546,6 +569,11 @@ def apply_presets(db: Session = Depends(get_db)):
         product = products.get(preset.product_id)
         if product is None:
             continue
+        # Skip products with under 1 MT of stock — too little to auto-allocate.
+        smt = _stock_mt(product, stock_units.get(preset.product_id, 0) or 0)
+        if smt is not None and smt < MIN_AUTO_ALLOC_MT:
+            skipped_low_stock += 1
+            continue
         products_touched.add(preset.product_id)
 
         if preset.group_id:
@@ -561,6 +589,28 @@ def apply_presets(db: Session = Depends(get_db)):
             _upsert_alloc(preset.user_id, preset.product_id, preset.weekly_qty, product)
             allocations_set += 1
 
+    # Actively un-allocate every product under 1 MT of stock — this also clears
+    # allocations left over from before the stock dropped (or from an older run
+    # made before this floor existed), so nobody holds sub-1-MT stock.
+    low_pids = []
+    for pid, prod in products.items():
+        smt = _stock_mt(prod, stock_units.get(pid, 0) or 0)
+        if smt is not None and smt < MIN_AUTO_ALLOC_MT:   # None = unknown weight, leave alone
+            low_pids.append(pid)
+    cleared_low_stock = 0
+    if low_pids:
+        cleared_low_stock = (
+            db.query(models.Allocation)
+            .filter(
+                models.Allocation.product_id.in_(low_pids),
+                models.Allocation.allocated_qty > 0,
+            )
+            .update(
+                {"allocated_qty": 0, "used_qty": 0, "remaining_qty": 0},
+                synchronize_session=False,
+            )
+        )
+
     # Update last_run_at
     s = _get_or_create_settings(db)
     s.last_run_at = datetime.utcnow()
@@ -570,6 +620,8 @@ def apply_presets(db: Session = Depends(get_db)):
         "ok": True,
         "products_touched": len(products_touched),
         "allocations_set":  allocations_set,
+        "skipped_low_stock": skipped_low_stock,
+        "cleared_low_stock": cleared_low_stock,
     }
 
 

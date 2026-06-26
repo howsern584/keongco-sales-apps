@@ -220,13 +220,13 @@
 {% endfor %}
 <div class="bg-white rounded-lg border border-gray-100 overflow-hidden">
   <div class="flex items-center gap-1.5 px-2 py-1 cursor-pointer" onclick="toggleAllocDetail({{ p.id }})">
-    {% if ns_a.any_zero %}<span class="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
-    {% elif ns_a.set_count == 0 %}<span class="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0"></span>
-    {% else %}<span class="w-1.5 h-1.5 rounded-full bg-brand shrink-0"></span>{% endif %}
+    {% if ns_a.any_zero %}<span id="alloc-dot-{{ p.id }}" class="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0"></span>
+    {% elif ns_a.set_count == 0 %}<span id="alloc-dot-{{ p.id }}" class="w-1.5 h-1.5 rounded-full bg-gray-300 shrink-0"></span>
+    {% else %}<span id="alloc-dot-{{ p.id }}" class="w-1.5 h-1.5 rounded-full bg-brand shrink-0"></span>{% endif %}
     <span class="flex-1 text-xs font-medium truncate min-w-0 {% if not stk or stk.total == 0 %}text-gray-300{% else %}text-gray-800{% endif %}">{{ p.description }}{% if p.remark %} <span class="{% if not stk or stk.total == 0 %}text-gray-300{% else %}text-indigo-500{% endif %} font-normal">· {{ p.remark }}</span>{% endif %}</span>
     {% if stk and stk.total > 0 %}<span class="text-xs font-bold px-1.5 py-0 rounded bg-blue-50 text-blue-700 shrink-0 ml-1">{{ stk.total }} {{ stk.unit }}</span>
     {% else %}<span class="text-xs text-gray-300 shrink-0 ml-1">no stock</span>{% endif %}
-    <div class="flex items-center gap-0.5 shrink-0">
+    <div id="alloc-chips-{{ p.id }}" class="flex items-center gap-0.5 shrink-0">
       {% if ns_a.set_count == 0 %}<span class="text-xs text-gray-400 italic">—</span>
       {% elif pool and pool.total_qty > 0 %}
       <span class="text-xs px-1 py-0 rounded font-medium {% if pool.available_qty == 0 %}bg-red-100 text-red-600{% else %}bg-purple-50 text-purple-700{% endif %}">P:{{ pool.available_qty }}</span>
@@ -256,12 +256,14 @@
             class="text-xs font-semibold px-1.5 py-0 bg-purple-600 text-white rounded shrink-0 {% if no_stk %}opacity-30 pointer-events-none{% endif %}">Set</button>
     <button onclick="clearAlloc({{ p.id }}, '{{ p.description | replace("'","\\'") }}')"
             class="text-xs font-semibold px-1.5 py-0 bg-red-100 text-red-600 rounded shrink-0 ml-auto">Clear</button>
+    <div id="pool-bar-{{ p.id }}" class="w-full {% if not (pool and pool.total_qty > 0) %}hidden{% endif %}">
     {% if pool and pool.total_qty > 0 %}
     {% set pool_pct = (pool.available_qty / pool.total_qty * 100) | int %}
-    <div class="w-full mt-0.5 bg-purple-100 rounded-full h-1.5">
+    <div class="mt-0.5 bg-purple-100 rounded-full h-1.5">
       <div class="{% if pool_pct == 0 %}bg-red-400{% elif pool_pct < 20 %}bg-amber-400{% else %}bg-purple-500{% endif %} rounded-full h-1.5" style="width:{{ pool_pct }}%"></div>
     </div>
     {% endif %}
+    </div>
   </div>
   <div id="alloc-detail-{{ p.id }}" class="hidden border-t border-gray-100">
     {% if all_groups %}
@@ -303,6 +305,7 @@
       <span class="text-xs text-gray-300 shrink-0">—/—</span>
       {% endif %}
       <input type="number" min="0" placeholder="alloc" data-sp-id="{{ sp.id }}" data-product-id="{{ p.id }}"
+             data-allocated="{{ alloc.allocated_qty if alloc else 0 }}" data-remaining="{{ alloc.remaining_qty if alloc else 0 }}"
              value="{{ alloc.allocated_qty if alloc and alloc.allocated_qty > 0 else '' }}"
              class="alloc-inline-input w-11 border border-gray-300 rounded px-1 py-0 text-xs text-center focus:outline-none focus:ring-1 focus:ring-brand"/>
       <button onclick="saveInlineAlloc(this, {{ sp.id }}, {{ p.id }})"
@@ -323,9 +326,11 @@
 {% set ns_in  = namespace(items=[]) %}
 {% set ns_out = namespace(items=[]) %}
 {% for p in products %}
+  {% if p.id not in attention_map %}
   {% set stk = product_stock.get(p.id) %}
   {% if stk and stk.total > 0 %}{% set ns_in.items  = ns_in.items  + [p] %}
   {% else %}{% set ns_out.items = ns_out.items + [p] %}{% endif %}
+  {% endif %}
 {% endfor %}
 
 {% set cat_order_a = ['on','sh','gi','po','ga','co','pa','be','sp','dc'] %}
@@ -336,6 +341,27 @@
 } %}
 
 <div class="space-y-3">
+  {% if attention_products %}
+  <div class="border border-red-200 bg-red-50 rounded-lg p-2 space-y-1.5">
+    <div class="flex items-center gap-1.5 px-1">
+      <span class="text-red-500 text-sm">⚠</span>
+      <span class="text-xs font-bold text-red-700 uppercase tracking-wider">Requires Attention — stock below weekly sales</span>
+      <span class="text-xs text-red-300">({{ attention_products | length }})</span>
+    </div>
+    {% for p in attention_products %}
+      {% set att = attention_map.get(p.id) %}
+      <div>
+        <div class="flex items-center flex-wrap gap-x-1.5 px-1.5 pt-0.5 text-[11px] text-red-700">
+          <span class="font-semibold">Stock {{ att.stock_mt }} MT</span>
+          <span class="text-red-400 font-bold">&lt;</span>
+          <span class="font-semibold">Weekly {{ att.weekly_mt }} MT</span>
+          <span class="text-red-500 bg-red-100 rounded px-1">short {{ att.deficit_mt }} MT/wk</span>
+        </div>
+        {{ product_card(p) }}
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% for cat in cat_order_a %}
     {% set ns_cat = namespace(items=[]) %}
     {% for p in ns_in.items %}

@@ -566,6 +566,56 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
         for p in products
     }
 
+    # ── Stock-vs-weekly-sales attention flags ──────────────────────────────
+    # Flag products whose current stock (in metric tons) is below the average
+    # weekly sales volume (in MT) — they need allocation control attention.
+    # Weekly volume = MT sold over the last 8 weeks of order history ÷ 8.
+    from datetime import timedelta
+    LOOKBACK_WEEKS = 8
+    anchor = db.query(_func2.max(models.Order.created_at)).scalar() or datetime.utcnow()
+    cutoff = anchor - timedelta(weeks=LOOKBACK_WEEKS)
+
+    sold_rows = (
+        db.query(
+            models.OrderLineItem.product_id,
+            _func2.sum(models.OrderLineItem.quantity).label("units"),
+        )
+        .join(models.Order, models.Order.id == models.OrderLineItem.order_id)
+        .filter(
+            models.Order.created_at >= cutoff,
+            models.Order.status.in_([
+                models.OrderStatus.submitted,
+                models.OrderStatus.approved,
+                models.OrderStatus.pushed_to_sage,
+            ]),
+        )
+        .group_by(models.OrderLineItem.product_id)
+        .all()
+    )
+    sold_units = {r.product_id: int(r.units or 0) for r in sold_rows}
+
+    attention_map = {}   # product_id -> {stock_mt, weekly_mt, deficit_mt, _ratio}
+    MIN_WEEKLY_MT = 0.1  # ignore negligible-volume products (< 100 kg/week)
+    for p in products:
+        w = p.unit_weight_kg or 0
+        if w <= 0:
+            continue   # can't express this product in MT
+        stock_mt  = product_stock.get(p.id, {}).get("total", 0) * w / 1000.0
+        weekly_mt = (sold_units.get(p.id, 0) * w / 1000.0) / LOOKBACK_WEEKS
+        if weekly_mt >= MIN_WEEKLY_MT and 0 < stock_mt < weekly_mt:
+            attention_map[p.id] = {
+                "stock_mt":   round(stock_mt, 1),
+                "weekly_mt":  round(weekly_mt, 1),
+                "deficit_mt": round(weekly_mt - stock_mt, 1),
+                "_ratio":     stock_mt / weekly_mt,   # raw, for sorting
+            }
+
+    # Most critical first (lowest stock-to-weekly ratio).
+    attention_products = sorted(
+        [p for p in products if p.id in attention_map],
+        key=lambda p: attention_map[p.id]["_ratio"],
+    )
+
     sp_map = {sp.id: sp for sp in salespeople}
     pr_map = {p.id: p for p in products}
     critical_allocs = []
@@ -631,6 +681,8 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
         group_members=group_members,
         preset_map=preset_map,
         schedule=schedule,
+        attention_map=attention_map,
+        attention_products=attention_products,
     ))
 
 
