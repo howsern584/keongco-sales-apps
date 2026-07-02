@@ -32,11 +32,22 @@
   <!-- Top bar -->
   <header class="bg-brand text-white px-4 py-3 flex items-center justify-between shadow sticky top-0 z-10">
     <span class="font-bold text-lg" data-i18n="app_name">Keongco Sales</span>
-    <button id="lang-toggle"
-            onclick="toggleLang()"
-            class="text-xs border border-white rounded px-2 py-1 hover:bg-brand-dark transition">
-      中文
-    </button>
+    <div class="flex items-center gap-2">
+      <button id="lang-toggle"
+              onclick="toggleLang()"
+              class="text-xs border border-white rounded px-2 py-1 hover:bg-brand-dark transition">
+        中文
+      </button>
+      {% if show_nav %}
+      <a href="/app/logout"
+         class="flex items-center gap-1 text-xs border border-white rounded px-2 py-1 hover:bg-brand-dark transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+        <span data-i18n="sign_out">Sign Out</span>
+      </a>
+      {% endif %}
+    </div>
   </header>
 
   <!-- Page content injected here -->

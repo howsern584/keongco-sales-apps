@@ -16,6 +16,7 @@ const LANG = {
     nav_customers:   "Customers",
     nav_admin:       "Admin",
     nav_logout:      "Logout",
+    sign_out:        "Sign Out",
     // Login
     login_title:     "Sign In",
     login_username:  "Username",
@@ -82,6 +83,7 @@ const LANG = {
     nav_customers:   "客户",
     nav_admin:       "管理",
     nav_logout:      "退出",
+    sign_out:        "退出登录",
     // Login
     login_title:     "登录",
     login_username:  "用户名",
