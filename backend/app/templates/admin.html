@@ -152,12 +152,23 @@
                class="w-full border border-indigo-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-indigo-50"/>
       </div>
 
+      <!-- Lot sell sequence -->
+      <div class="border-t border-gray-100 pt-2">
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          Lot Sell Sequence
+          <span class="font-normal text-gray-400 ml-1">— top is sold first; default is oldest first (FIFO)</span>
+        </label>
+        <div id="price-modal-lots" class="space-y-1 max-h-48 overflow-y-auto">
+          <p class="text-xs text-gray-400">Loading lots…</p>
+        </div>
+      </div>
+
       <div id="price-modal-msg" class="hidden text-sm text-center rounded-lg py-2"></div>
       <div class="flex gap-3 pt-1">
         <button onclick="closePriceModal()"
                 class="flex-1 border border-gray-300 text-gray-600 font-semibold py-3 rounded-xl">Cancel</button>
         <button onclick="savePriceModal()"
-                class="flex-1 bg-brand text-white font-semibold py-3 rounded-xl">Save Price</button>
+                class="flex-1 bg-brand text-white font-semibold py-3 rounded-xl">Save</button>
       </div>
     </div>
   </div>
@@ -382,10 +393,6 @@
 
 {% block scripts %}
 <script>
-// ── Allocation data — populated by loadAllocations() fragment's <script> ──────
-let ALLOC_SALESPEOPLE = [];
-let ALLOC_MAP = {};
-let POOL_MAP  = {};
 
 function toggleCat(key) {
   const body = document.getElementById(`cat-body-${key}`);
@@ -636,142 +643,29 @@ async function loadReports() {
   showTab(valid.includes(hash) ? hash : 'pending');
 })();
 
-// ── Allocation mode toggle ─────────────────────────────────────────────────
-let _allocMode = 'individual';
-
-function setAllocMode(mode) {
-  _allocMode = mode;
-  const isIndividual = mode === 'individual';
-  document.getElementById('alloc-individual-fields').classList.toggle('hidden', !isIndividual);
-  document.getElementById('alloc-pool-fields').classList.toggle('hidden', isIndividual);
-  document.getElementById('mode-btn-individual').className =
-    `flex-1 py-2 text-sm font-semibold transition ${isIndividual ? 'bg-brand text-white' : 'bg-white text-gray-500'}`;
-  document.getElementById('mode-btn-pool').className =
-    `flex-1 py-2 text-sm font-semibold transition ${!isIndividual ? 'bg-purple-600 text-white' : 'bg-white text-gray-500'}`;
-  document.getElementById('alloc-qty-label').textContent =
-    isIndividual ? 'New Total Qty' : 'New Pool Total Qty';
-  document.getElementById('alloc-unit-label').textContent = '';
-  document.getElementById('alloc-qty').value = '';
-  document.getElementById('alloc-msg').classList.add('hidden');
-}
-
-function onAllocProductChange() {
-  const opt = document.getElementById('alloc-product').options[
-    document.getElementById('alloc-product').selectedIndex];
-  const unit = opt.dataset.unit || '';
-  const mode = opt.dataset.mode || '';
-  const pid  = parseInt(opt.value);
-  document.getElementById('alloc-unit-label').textContent = unit ? `(${unit})` : '';
-
-  // Warn if this product uses a shared pool
-  if (mode === 'fcfs') {
-    showAllocMsg('This product uses a Shared Pool. Switch to Shared Pool mode to set it.', false);
-  } else {
-    document.getElementById('alloc-msg').classList.add('hidden');
-  }
-
-  // Show stock on hand
-  showStockInfo(pid, 'alloc-stock-info', 'alloc-stock-total', 'alloc-stock-lots', unit);
-}
-
-function showStockInfo(pid, boxId, totalId, lotsId, unit) {
-  const box = document.getElementById(boxId);
-  if (!pid || !STOCK_DATA[pid]) { box.classList.add('hidden'); return; }
-  const s = STOCK_DATA[pid];
-  const u = unit || s.unit;
-  document.getElementById(totalId).textContent = `${s.total.toLocaleString()} ${u}`;
-  const lotsEl = document.getElementById(lotsId);
-  if (s.lots.length > 1) {
-    lotsEl.innerHTML = s.lots.map(l =>
-      `<div class="flex justify-between"><span>Lot ${l.code}</span><span>${l.qty.toLocaleString()} ${u}</span></div>`
-    ).join('');
-    lotsEl.classList.remove('hidden');
-  } else {
-    lotsEl.innerHTML = '';
-  }
-  box.classList.remove('hidden');
-}
-
-// Pool and stock data — populated by loadAllocations() fragment's <script>
-let POOL_DATA  = {};
-let STOCK_DATA = {};
-
-function onPoolProductChange() {
-  const sel = document.getElementById('pool-product');
-  const opt = sel.options[sel.selectedIndex];
-  const unit = opt.dataset.unit || '';
-  const pid = parseInt(opt.value);
-  document.getElementById('alloc-unit-label').textContent = unit ? `(${unit})` : '';
-
-  // Current pool info
-  const info = document.getElementById('pool-current-info');
-  if (POOL_DATA[pid]) {
-    const d = POOL_DATA[pid];
-    info.textContent = `Current pool: ${d.available.toLocaleString()} available / ${d.total.toLocaleString()} total · ${d.reserved.toLocaleString()} reserved`;
-    info.classList.remove('hidden');
-  } else {
-    info.classList.add('hidden');
-  }
-
-  // Stock on hand
-  showStockInfo(pid, 'pool-stock-info', 'pool-stock-total', 'pool-stock-lots', unit);
-}
-
-// Pre-fill the form and switch to allocations tab
+// Jump to the inline allocation row for a salesperson + product:
+// open the product card, scroll to it, and focus that person's qty input.
 function prefillAlloc(spId, productId, unit) {
   showTab('allocations');
-  if (spId === 0) {
-    // It's a shared pool product
-    setAllocMode('pool');
-    document.getElementById('pool-product').value = productId;
-    onPoolProductChange();
-  } else {
-    setAllocMode('individual');
-    document.getElementById('alloc-sp').value = spId;
-    document.getElementById('alloc-product').value = productId;
-    document.getElementById('alloc-unit-label').textContent = unit ? `(${unit})` : '';
-  }
-  document.getElementById('alloc-qty').focus();
-}
+  // Give the tab a moment to render if it was lazy-loaded.
+  setTimeout(() => {
+    // Force the product's detail section open.
+    const detail = document.getElementById(`alloc-detail-${productId}`);
+    if (detail) detail.classList.remove('hidden');
+    const chev = document.getElementById(`alloc-chev-${productId}`);
+    if (chev) chev.classList.add('rotate-180');
 
-async function saveAllocation() {
-  const qty = parseInt(document.getElementById('alloc-qty').value);
-  if (!qty || qty < 1) { showAllocMsg('Enter a valid quantity (minimum 1).', false); return; }
-
-  if (_allocMode === 'pool') {
-    // Save shared pool
-    const prodId = parseInt(document.getElementById('pool-product').value);
-    if (!prodId) { showAllocMsg('Select a product.', false); return; }
-    const r = await fetch('/admin/fcfs-pools', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_id: prodId, total_qty: qty }),
-    });
-    if (r.ok) {
-      showAllocMsg('Shared pool updated!', true);
-      setTimeout(() => location.reload(), 800);
-    } else {
-      const err = await r.json();
-      showAllocMsg(err.detail || 'Failed to save.', false);
+    // Pool products: focus the pool qty input; otherwise the person's alloc input.
+    const target = spId === 0
+      ? document.getElementById(`pool-qty-${productId}`)
+      : document.querySelector(
+          `.alloc-inline-input[data-sp-id="${spId}"][data-product-id="${productId}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.focus();
+      target.select && target.select();
     }
-  } else {
-    // Save individual allocation
-    const spId   = parseInt(document.getElementById('alloc-sp').value);
-    const prodId = parseInt(document.getElementById('alloc-product').value);
-    if (!spId || !prodId) { showAllocMsg('Select a salesperson and product.', false); return; }
-    const r = await fetch('/admin/allocations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ salesperson_id: spId, product_id: prodId, allocated_qty: qty }),
-    });
-    if (r.ok) {
-      showAllocMsg('Allocation saved!', true);
-      setTimeout(() => location.reload(), 800);
-    } else {
-      const err = await r.json();
-      showAllocMsg(err.detail || 'Failed to save.', false);
-    }
-  }
+  }, 50);
 }
 
 function openPriceModal(id, name, base, floor, ceiling, special, btn) {
@@ -785,9 +679,98 @@ function openPriceModal(id, name, base, floor, ceiling, special, btn) {
   document.getElementById('price-modal-remark').value = (btn && btn.dataset && btn.dataset.remark) ? btn.dataset.remark : '';
   document.getElementById('price-modal-msg').classList.add('hidden');
   document.getElementById('price-modal').classList.remove('hidden');
+  loadModalLots(id);
 }
 function closePriceModal() {
   document.getElementById('price-modal').classList.add('hidden');
+}
+
+// ── Lot sell sequence (inside price modal) ──────────────────────────────────
+let _modalLots = [];   // [{id, lot_code, received_date, qty_on_hand}] in current order
+
+async function loadModalLots(productId) {
+  const box = document.getElementById('price-modal-lots');
+  box.innerHTML = '<p class="text-xs text-gray-400">Loading lots…</p>';
+  _modalLots = [];
+  const r = await fetch(`/admin/products/${productId}/lots`);
+  if (!r.ok) { box.innerHTML = '<p class="text-xs text-red-400">Could not load lots.</p>'; return; }
+  _modalLots = await r.json();
+  renderModalLots();
+}
+
+function renderModalLots() {
+  const box = document.getElementById('price-modal-lots');
+  if (!_modalLots.length) {
+    box.innerHTML = '<p class="text-xs text-gray-400">No lots for this product.</p>';
+    return;
+  }
+  box.innerHTML = _modalLots.map((lot, i) => `
+    <div class="lot-row flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5" data-idx="${i}">
+      <span class="lot-drag-handle cursor-grab select-none text-gray-400 px-0.5 text-base leading-none"
+            style="touch-action:none" title="Hold and drag to reorder">⠿</span>
+      <span class="text-xs font-bold text-gray-400 w-4 text-center">${i + 1}</span>
+      <div class="flex-1 min-w-0">
+        <span class="text-sm font-medium text-gray-700">${lot.lot_code}</span>
+        <span class="text-xs text-gray-400 ml-1">${lot.received_date || ''}${lot.qty_on_hand ? ' · ' + lot.qty_on_hand : ''}</span>
+      </div>
+      <button type="button" onclick="moveModalLot(${i}, -1)" ${i === 0 ? 'disabled' : ''}
+        class="w-6 h-6 rounded flex items-center justify-center text-gray-500 ${i === 0 ? 'opacity-30' : 'hover:bg-gray-200'}">▲</button>
+      <button type="button" onclick="moveModalLot(${i}, 1)" ${i === _modalLots.length - 1 ? 'disabled' : ''}
+        class="w-6 h-6 rounded flex items-center justify-center text-gray-500 ${i === _modalLots.length - 1 ? 'opacity-30' : 'hover:bg-gray-200'}">▼</button>
+    </div>`).join('');
+  // Wire up hold-and-drag on each handle.
+  box.querySelectorAll('.lot-drag-handle').forEach(h =>
+    h.addEventListener('pointerdown', onLotDragStart));
+}
+
+function moveModalLot(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= _modalLots.length) return;
+  [_modalLots[i], _modalLots[j]] = [_modalLots[j], _modalLots[i]];
+  renderModalLots();
+}
+
+// ── Hold-and-drag reordering (touch + mouse via pointer events) ─────────────
+let _lotDrag = null;
+
+function _highlightDragRow(idx) {
+  const row = document.querySelector(`#price-modal-lots .lot-row[data-idx="${idx}"]`);
+  if (row) row.classList.add('ring-2', 'ring-brand', 'opacity-70', 'shadow');
+}
+
+function onLotDragStart(e) {
+  e.preventDefault();
+  const row = e.target.closest('.lot-row');
+  if (!row) return;
+  _lotDrag = { idx: parseInt(row.dataset.idx) };
+  _highlightDragRow(_lotDrag.idx);
+  document.addEventListener('pointermove', onLotDragMove);
+  document.addEventListener('pointerup', onLotDragEnd, { once: true });
+}
+
+function onLotDragMove(e) {
+  if (!_lotDrag) return;
+  const rows = Array.from(document.querySelectorAll('#price-modal-lots .lot-row'));
+  // Target = first row whose vertical midpoint is below the pointer; else last.
+  let target = rows.length - 1;
+  for (let k = 0; k < rows.length; k++) {
+    const r = rows[k].getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { target = k; break; }
+  }
+  if (target !== _lotDrag.idx) {
+    const [moved] = _modalLots.splice(_lotDrag.idx, 1);
+    _modalLots.splice(target, 0, moved);
+    _lotDrag.idx = target;
+    renderModalLots();
+    _highlightDragRow(target);
+  }
+}
+
+function onLotDragEnd() {
+  _lotDrag = null;
+  document.removeEventListener('pointermove', onLotDragMove);
+  document.querySelectorAll('#price-modal-lots .lot-row')
+    .forEach(r => r.classList.remove('ring-2', 'ring-brand', 'opacity-70', 'shadow'));
 }
 async function savePriceModal() {
   const id      = parseInt(document.getElementById('price-modal-id').value);
@@ -808,13 +791,21 @@ async function savePriceModal() {
       remark: remark || null,
     }),
   });
-  if (r.ok) {
-    showPriceMsg('Price saved!', true);
-    setTimeout(() => { closePriceModal(); location.reload(); }, 700);
-  } else {
+  if (!r.ok) {
     const err = await r.json();
     showPriceMsg(err.detail || 'Failed to save.', false);
+    return;
   }
+  // Save the lot sell sequence too (if this product has lots).
+  if (_modalLots.length) {
+    await fetch(`/admin/products/${id}/lot-order`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lot_ids: _modalLots.map(l => l.id) }),
+    });
+  }
+  showPriceMsg('Saved!', true);
+  setTimeout(() => { closePriceModal(); location.reload(); }, 700);
 }
 function showPriceMsg(text, success) {
   const el = document.getElementById('price-modal-msg');

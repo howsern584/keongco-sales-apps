@@ -181,8 +181,31 @@ def run():
                 print(f"  ...{orders_made} orders committed")
 
         db.commit()
+
+        # Assign each customer to the salesperson who sold to them most, so the
+        # salesperson's New Order customer search shows their own customers.
+        from sqlalchemy import func as _f
+        owner_rows = (
+            db.query(Order.customer_id, Order.salesperson_id,
+                     _f.count(Order.id).label("c"))
+            .group_by(Order.customer_id, Order.salesperson_id)
+            .all()
+        )
+        best = {}
+        for cid, spid, c in owner_rows:
+            if cid not in best or c > best[cid][1]:
+                best[cid] = (spid, c)
+        owners_set = 0
+        for cid, (spid, _c) in best.items():
+            cust = db.get(Customer, cid)
+            if cust:
+                cust.salesperson_id = spid
+                owners_set += 1
+        db.commit()
+
         print()
         print("Order import complete:")
+        print(f"  {owners_set} customers linked to their salesperson")
         print(f"  {new_cust} new customers, {new_prod} new products added")
         print(f"  {orders_made} orders imported (status = pushed_to_sage)")
         print(f"  {lines_made} line items created ({skipped_lines} skipped)")

@@ -82,6 +82,7 @@ class LineItemCreate(BaseModel):
     unit_price: float
     price_override: bool = False
     override_reason: Optional[str] = None
+    lot_note: Optional[str] = None       # salesperson's remark on the lot choice
 
 
 class LineItemOut(BaseModel):
@@ -94,6 +95,7 @@ class LineItemOut(BaseModel):
     line_total: float
     price_override: bool = False
     override_reason: Optional[str] = None
+    lot_note: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -105,6 +107,7 @@ class OrderDetailsUpdate(BaseModel):
     order_notes: Optional[str] = None
     transport: Optional[str] = None
     customer_po: Optional[str] = None
+    customer_id: Optional[int] = None   # allow changing the customer while editing
 
 
 class SageRefsUpdate(BaseModel):

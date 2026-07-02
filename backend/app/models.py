@@ -181,6 +181,9 @@ class Lot(Base):
     received_date = Column(DateTime, default=datetime.utcnow)
     qty_on_hand = Column(Integer, default=0, nullable=False)  # physical stock count for this lot
     notes = Column(Text, nullable=True)
+    # Admin-controlled sell order: lower number is sold first. NULL = follow the
+    # default FIFO rule (oldest received_date first).
+    sale_priority = Column(Integer, nullable=True)
 
     product = relationship("Product", back_populates="lots")
     photos = relationship("LotPhoto", back_populates="lot")
@@ -279,6 +282,9 @@ class OrderLineItem(Base):
     # override_reason is required in that case so invoicing can judge it.
     price_override = Column(Boolean, default=False, nullable=False)
     override_reason = Column(Text, nullable=True)
+
+    # Optional free-text remark the salesperson adds about the lot choice.
+    lot_note = Column(Text, nullable=True)
 
     order = relationship("Order", back_populates="line_items")
 

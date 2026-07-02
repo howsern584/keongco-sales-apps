@@ -168,6 +168,63 @@ def update_product_price(product_id: int, payload: schemas.ProductPriceUpdate,
     return record
 
 
+def _lots_in_sell_order(db: Session, product_id: int):
+    """Lots for a product in sell order: admin priority first, then FIFO (oldest)."""
+    return (
+        db.query(models.Lot)
+        .filter(models.Lot.product_id == product_id)
+        .order_by(
+            models.Lot.sale_priority.is_(None),
+            models.Lot.sale_priority.asc(),
+            models.Lot.received_date.asc(),
+        )
+        .all()
+    )
+
+
+@router.get("/products/{product_id}/lots")
+def get_product_lots(product_id: int, db: Session = Depends(get_db)):
+    """Return a product's lots in current sell order (for the admin reorder UI)."""
+    lots = _lots_in_sell_order(db, product_id)
+    return [
+        {
+            "id": l.id,
+            "lot_code": l.lot_code,
+            "received_date": l.received_date.strftime("%Y-%m-%d") if l.received_date else None,
+            "qty_on_hand": l.qty_on_hand,
+            "has_priority": l.sale_priority is not None,
+        }
+        for l in lots
+    ]
+
+
+class LotOrderPayload(BaseModel):
+    lot_ids: List[int]   # in the desired sell order, first = sold first
+
+
+@router.post("/products/{product_id}/lot-order")
+def set_lot_order(product_id: int, payload: LotOrderPayload, db: Session = Depends(get_db)):
+    """Set the sell sequence for a product's lots. The given lot_ids order becomes
+    sale_priority 0,1,2,… Any lot not listed is reset to FIFO (sale_priority=NULL)."""
+    lots = {l.id: l for l in db.query(models.Lot).filter(models.Lot.product_id == product_id).all()}
+    # Assign priorities in the order given (ignore ids that aren't this product's lots).
+    seq = 0
+    listed = set()
+    for lot_id in payload.lot_ids:
+        lot = lots.get(lot_id)
+        if lot is None:
+            continue
+        lot.sale_priority = seq
+        listed.add(lot_id)
+        seq += 1
+    # Lots not mentioned fall back to FIFO.
+    for lot_id, lot in lots.items():
+        if lot_id not in listed:
+            lot.sale_priority = None
+    db.commit()
+    return {"ok": True, "ordered": seq}
+
+
 @router.get("/products/{product_id}/price-history", response_model=List[schemas.PriceHistoryOut])
 def get_price_history(product_id: int, db: Session = Depends(get_db)):
     """Return the last 20 price changes for a product."""

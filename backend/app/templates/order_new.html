@@ -14,6 +14,16 @@
   <h2 class="text-xl font-bold" data-i18n="new_order_title">New Order</h2>
 </div>
 
+<!-- Edit-mode banner (shown only when editing an existing order) -->
+{% if edit_order_id %}
+<div id="edit-banner" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-2.5 mb-3 text-sm font-medium flex items-center gap-2">
+  <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+  </svg>
+  Editing Order #SC{{ '%06d' | format(edit_order_id) }} — make your changes and press Submit to resend to admin.
+</div>
+{% endif %}
+
 <!-- Customer selector -->
 <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-3">
   <label class="block text-sm font-semibold text-gray-700 mb-2" data-i18n="select_customer">Select Customer</label>
@@ -150,14 +160,19 @@
           {% endif %}
         </div>
         {% if lot_list %}
-        <div class="flex flex-wrap gap-2">
-          {% for lot in lot_list %}
-          <div class="flex items-center gap-1.5 bg-white border border-gray-200 rounded px-2 py-0.5 text-xs">
-            <span class="font-medium text-gray-700">{{ lot.lot_code }}</span>
-            <span class="text-gray-400">{{ lot.received_date | string | truncate(10, true, '') }}</span>
-            <a href="/app/lots/{{ lot.id }}/photos" class="text-brand underline">Photos</a>
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs text-gray-400 shrink-0">Lot:</span>
+            <select id="slot-{{ p.id }}"
+                    class="flex-1 border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand">
+              <option value="">Auto — {{ lot_list[0].lot_code }} (default order)</option>
+              {% for lot in lot_list %}
+              <option value="{{ lot.id }}">{{ lot.lot_code }} · {{ lot.received_date | string | truncate(10, true, '') }}</option>
+              {% endfor %}
+            </select>
           </div>
-          {% endfor %}
+          <input id="snote-{{ p.id }}" type="text" placeholder="Remark on lot (optional)"
+                 class="w-full border border-gray-200 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand"/>
         </div>
         {% endif %}
       </div>
@@ -265,14 +280,19 @@
               {% endif %}
             </div>
             {% if lot_list %}
-            <div class="flex flex-wrap gap-2">
-              {% for lot in lot_list %}
-              <div class="flex items-center gap-1.5 bg-white border border-gray-200 rounded px-2 py-0.5 text-xs">
-                <span class="font-medium text-gray-700">{{ lot.lot_code }}</span>
-                <span class="text-gray-400">{{ lot.received_date | string | truncate(10, true, '') }}</span>
-                <a href="/app/lots/{{ lot.id }}/photos" class="text-brand underline">Photos</a>
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-400 shrink-0">Lot:</span>
+                <select id="slot-{{ p.id }}"
+                        class="flex-1 border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand">
+                  <option value="">Auto — {{ lot_list[0].lot_code }} (default order)</option>
+                  {% for lot in lot_list %}
+                  <option value="{{ lot.id }}">{{ lot.lot_code }} · {{ lot.received_date | string | truncate(10, true, '') }}</option>
+                  {% endfor %}
+                </select>
               </div>
-              {% endfor %}
+              <input id="snote-{{ p.id }}" type="text" placeholder="Remark on lot (optional)"
+                     class="w-full border border-gray-200 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand"/>
             </div>
             {% endif %}
           </div>
@@ -373,16 +393,21 @@
                    class="w-20 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand"/>
             <span class="text-xs text-gray-400">/ {{ p.unit.value }}</span>
           </div>
-          <!-- Lots -->
+          <!-- Lot pick + remark -->
           {% if lot_list %}
-          <div class="mt-1 flex flex-wrap gap-2">
-            {% for lot in lot_list %}
-            <div class="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-0.5 text-xs">
-              <span class="font-medium text-gray-700">{{ lot.lot_code }}</span>
-              <span class="text-gray-400">{{ lot.received_date | string | truncate(10, true, '') }}</span>
-              <a href="/app/lots/{{ lot.id }}/photos" class="text-brand underline">Photos</a>
+          <div class="mt-1.5 flex flex-col gap-1">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs text-gray-400 shrink-0">Lot:</span>
+              <select id="lot-select-{{ p.id }}"
+                      class="flex-1 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="">Auto — {{ lot_list[0].lot_code }} (default order)</option>
+                {% for lot in lot_list %}
+                <option value="{{ lot.id }}">{{ lot.lot_code }} · {{ lot.received_date | string | truncate(10, true, '') }}</option>
+                {% endfor %}
+              </select>
             </div>
-            {% endfor %}
+            <input id="lot-note-{{ p.id }}" type="text" placeholder="Remark on lot (optional)"
+                   class="w-full border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand"/>
           </div>
           {% endif %}
         </div>
@@ -465,14 +490,19 @@
               <span class="text-xs text-gray-400">/ {{ p.unit.value }}</span>
             </div>
             {% if lot_list %}
-            <div class="mt-1 flex flex-wrap gap-2">
-              {% for lot in lot_list %}
-              <div class="flex items-center gap-1.5 bg-gray-50 rounded px-2 py-0.5 text-xs">
-                <span class="font-medium text-gray-700">{{ lot.lot_code }}</span>
-                <span class="text-gray-400">{{ lot.received_date | string | truncate(10, true, '') }}</span>
-                <a href="/app/lots/{{ lot.id }}/photos" class="text-brand underline">Photos</a>
+            <div class="mt-1.5 flex flex-col gap-1">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-gray-400 shrink-0">Lot:</span>
+                <select id="lot-select-{{ p.id }}"
+                        class="flex-1 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand">
+                  <option value="">Auto — {{ lot_list[0].lot_code }} (default order)</option>
+                  {% for lot in lot_list %}
+                  <option value="{{ lot.id }}">{{ lot.lot_code }} · {{ lot.received_date | string | truncate(10, true, '') }}</option>
+                  {% endfor %}
+                </select>
               </div>
-              {% endfor %}
+              <input id="lot-note-{{ p.id }}" type="text" placeholder="Remark on lot (optional)"
+                     class="w-full border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand"/>
             </div>
             {% endif %}
           </div>
@@ -719,6 +749,16 @@ function syncQtyAcrossLists() {
 // Canonical price: simple-price-{id}. Comprehensive uses price-{id}.
 
 const SALESPERSON_ID = {{ salesperson_id }};
+
+// ── Edit mode (null when creating a fresh order) ──
+const EDIT_ORDER_ID      = {{ edit_order_id or 'null' }};
+const EDIT_CUSTOMER_ID   = {{ edit_customer_id or 'null' }};
+const EDIT_CUSTOMER_NAME = {{ (edit_customer_name | tojson) if edit_customer_name else 'null' }};
+const EDIT_DELIVERY      = {{ (edit_delivery or '') | tojson }};
+const EDIT_NOTES         = {{ (edit_notes or '') | tojson }};
+const EDIT_TRANSPORT     = {{ (edit_transport or '') | tojson }};
+const EDIT_PO            = {{ (edit_customer_po or '') | tojson }};
+const EDIT_LINES         = {{ (edit_lines or {}) | tojson }};   // {product_id: {qty, price, lot_id, lot_note}}
 const PRODUCTS = {
   {% for p in products %}
   {{ p.id }}: {
@@ -1038,6 +1078,18 @@ function getLines() {
     const price = getPrice(id);
     if (qty <= 0) continue;
     const p = PRODUCTS[id];
+    // Optional lot pick + remark — read from whichever view the salesperson used:
+    // simple (slot-/snote-) or comprehensive (lot-select-/lot-note-). Both are
+    // always in the DOM; we take whichever holds a value.
+    const cLot = document.getElementById(`lot-select-${id}`);
+    const sLot = document.getElementById(`slot-${id}`);
+    const lotVal = (cLot && cLot.value) || (sLot && sLot.value) || '';
+    const lotId  = lotVal ? parseInt(lotVal) : null;
+    const cNote = document.getElementById(`lot-note-${id}`);
+    const sNote = document.getElementById(`snote-${id}`);
+    const lotNote = ((cNote && cNote.value) || (sNote && sNote.value) || '').trim();
+    const base = { product_id: parseInt(id), quantity: qty, unit_price: price,
+                   lot_id: lotId, lot_note: lotNote || null };
     const belowMin = (p.priceFloor !== null && price < p.priceFloor);
     if (belowMin) {
       const reason = (document.getElementById(`override-reason-${id}`) || {}).value || '';
@@ -1045,10 +1097,9 @@ function getLines() {
         showToast(`Add a reason for the below-minimum price on "${id}".`);
         return null;
       }
-      lines.push({ product_id: parseInt(id), quantity: qty, unit_price: price,
-                   price_override: true, override_reason: reason.trim() });
+      lines.push({ ...base, price_override: true, override_reason: reason.trim() });
     } else {
-      lines.push({ product_id: parseInt(id), quantity: qty, unit_price: price });
+      lines.push(base);
     }
   }
   return lines;
@@ -1086,43 +1137,94 @@ async function buildOrder(submit) {
     return;
   }
 
-  // Step 1: Create order
-  const r1 = await fetch('/orders', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      customer_id: selectedCustomerId,
-      salesperson_id: SALESPERSON_ID,
-      delivery_date: deliveryDateVal || null,
-      order_notes: orderNotesVal || null,
-      transport: transportVal || null,
-      customer_po: customerPoVal || null,
-    }),
-  });
-  if (!r1.ok) { showToast((await r1.json()).detail || 'Could not create order.'); return; }
-  const order = await r1.json();
+  const details = {
+    delivery_date: deliveryDateVal || null,
+    order_notes: orderNotesVal || null,
+    transport: transportVal || null,
+    customer_po: customerPoVal || null,
+  };
 
-  // Step 2: Add line items
+  let orderId;
+  if (EDIT_ORDER_ID) {
+    // ── Edit an existing draft: update details, replace lines, resubmit ──
+    orderId = EDIT_ORDER_ID;
+    const rd = await fetch(`/orders/${orderId}/details`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...details, customer_id: selectedCustomerId }),
+    });
+    if (!rd.ok) { showToast((await rd.json()).detail || 'Could not update order.'); return; }
+    // Clear old lines before re-adding the edited set.
+    const rc = await fetch(`/orders/${orderId}/lines`, { method: 'DELETE' });
+    if (!rc.ok) { showToast((await rc.json()).detail || 'Could not update lines.'); return; }
+  } else {
+    // ── Fresh order: create it ──
+    const r1 = await fetch('/orders', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_id: selectedCustomerId, salesperson_id: SALESPERSON_ID, ...details }),
+    });
+    if (!r1.ok) { showToast((await r1.json()).detail || 'Could not create order.'); return; }
+    orderId = (await r1.json()).id;
+  }
+
+  // Add line items
   for (const line of lines) {
-    const r2 = await fetch(`/orders/${order.id}/lines`, {
+    const r2 = await fetch(`/orders/${orderId}/lines`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(line),
     });
     if (!r2.ok) { showToast((await r2.json()).detail || 'Could not add line.'); return; }
   }
 
-  // Step 3: Submit if requested
+  // Submit if requested
   if (submit) {
-    const r3 = await fetch(`/orders/${order.id}/submit`, { method: 'POST' });
+    const r3 = await fetch(`/orders/${orderId}/submit`, { method: 'POST' });
     if (!r3.ok) { showToast((await r3.json()).detail || 'Could not submit order.'); return; }
   }
 
-  window.location.href = `/app/orders/${order.id}`;
+  window.location.href = `/app/orders/${orderId}`;
 }
 
 function saveDraft()   { buildOrder(false); }
 function submitOrder() { buildOrder(true); }
 
+// ── Edit mode: preload the order being edited ───────────────────────────────
+function _setVal(id, v) { const el = document.getElementById(id); if (el != null && v != null) el.value = v; }
+function _setSelect(id, v) {
+  const el = document.getElementById(id);
+  if (el && v != null) { el.value = String(v); el.dispatchEvent(new Event('change')); }
+}
+
+async function initEditMode() {
+  if (!EDIT_ORDER_ID) return;
+  const banner = document.getElementById('edit-banner');
+  if (banner) banner.classList.remove('hidden');
+
+  // Preselect the customer first (this also loads history/negotiated prices),
+  // THEN overwrite with the order's saved values so our edits win.
+  if (EDIT_CUSTOMER_ID) await selectCustomer(EDIT_CUSTOMER_ID, EDIT_CUSTOMER_NAME || 'Customer');
+
+  _setVal('delivery-date', EDIT_DELIVERY);
+  _setVal('order-notes', EDIT_NOTES);
+  _setVal('transport', EDIT_TRANSPORT);
+  _setVal('customer-po', EDIT_PO);
+
+  for (const pid in EDIT_LINES) {
+    const l = EDIT_LINES[pid];
+    _setVal(`qty-${pid}`, l.qty);
+    _setVal(`qty-detail-${pid}`, l.qty);
+    if (l.price != null) {
+      const pstr = Number(l.price).toFixed(2);
+      _setVal(`simple-price-${pid}`, pstr);
+      _setVal(`price-${pid}`, pstr);
+    }
+    if (l.lot_id != null) { _setSelect(`slot-${pid}`, l.lot_id); _setSelect(`lot-select-${pid}`, l.lot_id); }
+    if (l.lot_note) { _setVal(`snote-${pid}`, l.lot_note); _setVal(`lot-note-${pid}`, l.lot_note); }
+  }
+  updateTotal();
+}
+
 // Apply the saved mode on page load
 setMode(currentMode);
+initEditMode();
 </script>
 {% endblock %}

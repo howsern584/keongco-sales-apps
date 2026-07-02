@@ -39,3 +39,27 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Columns added after the first release. SQLite's create_all() only creates
+# missing TABLES, never new columns on existing ones, so we add them by hand.
+# Each entry: (table, column, SQL type). Safe to run on every startup.
+_ADDED_COLUMNS = [
+    ("lots",             "sale_priority", "INTEGER"),
+    ("order_line_items", "lot_note",      "TEXT"),
+]
+
+
+def run_lightweight_migrations():
+    """Add any missing columns to existing tables (idempotent). SQLite-focused;
+    on other databases it simply skips columns that already exist."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table, column, sqltype in _ADDED_COLUMNS:
+            if table not in existing_tables:
+                continue
+            cols = {c["name"] for c in inspector.get_columns(table)}
+            if column not in cols:
+                conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {sqltype}'))

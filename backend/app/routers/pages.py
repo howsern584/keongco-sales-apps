@@ -56,9 +56,19 @@ def _sort_products(products):
 
 
 def _bulk_lots(db, product_ids=None):
-    """Return {product_id: [lot, ...]} in one query instead of N queries."""
+    """Return {product_id: [lot, ...]} in one query instead of N queries.
+
+    Lots are returned in SELL ORDER: admin-prioritised lots first (by
+    sale_priority ascending), then the rest in FIFO order (oldest received
+    first). This is the sequence the New Order screen defaults to.
+    """
     from collections import defaultdict
-    q = db.query(models.Lot).order_by(models.Lot.product_id, models.Lot.received_date.desc())
+    q = db.query(models.Lot).order_by(
+        models.Lot.product_id,
+        models.Lot.sale_priority.is_(None),   # lots with a set priority come first
+        models.Lot.sale_priority.asc(),
+        models.Lot.received_date.asc(),        # FIFO fallback (oldest first)
+    )
     if product_ids is not None:
         q = q.filter(models.Lot.product_id.in_(product_ids))
     result = defaultdict(list)
@@ -237,7 +247,7 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/app/orders/new", response_class=HTMLResponse)
-def new_order_page(request: Request, db: Session = Depends(get_db)):
+def new_order_page(request: Request, edit: int | None = None, db: Session = Depends(get_db)):
     user, redirect = login_required(request, db)
     if redirect:
         return redirect
@@ -250,6 +260,24 @@ def new_order_page(request: Request, db: Session = Depends(get_db)):
         .filter(models.Product.status == models.ProductStatus.active)
         .all()
     )
+
+    # ── Edit mode: preload an existing DRAFT order owned by this salesperson ──
+    edit_order = None
+    edit_lines = {}          # product_id -> {qty, price, lot_id, lot_note}
+    edit_customer = None
+    if edit:
+        _o = db.query(models.Order).get(edit)
+        if (_o and _o.status == models.OrderStatus.draft
+                and (_o.salesperson_id == user.id or user.role == models.UserRole.admin)):
+            edit_order = _o
+            edit_customer = db.query(models.Customer).get(_o.customer_id)
+            for li in _o.line_items:
+                edit_lines[li.product_id] = {
+                    "qty":      li.quantity,
+                    "price":    li.unit_price,
+                    "lot_id":   li.lot_id,
+                    "lot_note": li.lot_note or "",
+                }
     # Allocation map: product_id -> allocation row for this salesperson.
     alloc_rows = db.query(models.Allocation).filter(
         models.Allocation.salesperson_id == user.id
@@ -262,9 +290,15 @@ def new_order_page(request: Request, db: Session = Depends(get_db)):
     prev_price_map = _bulk_prev_prices(db)
     fcfs_pools  = _bulk_pools(db)
 
-    # Order frequency: how many units this salesperson has ordered per product
-    # (across all non-draft orders). Used to sort regulars to the top.
+    # Order volume: units this salesperson has sold per product over the LAST
+    # MONTH (30 days). Anchored to the latest order in the system so historical
+    # test data still shows numbers; in production the latest order ≈ today, so
+    # this is effectively "sold in the last month". Shown as "×qty" per product
+    # and used to sort their regulars to the top.
+    from datetime import datetime, timedelta
     from sqlalchemy import func as _func
+    _anchor = db.query(_func.max(models.Order.created_at)).scalar() or datetime.utcnow()
+    _month_ago = _anchor - timedelta(days=30)
     freq_rows = (
         db.query(
             models.OrderLineItem.product_id,
@@ -274,6 +308,7 @@ def new_order_page(request: Request, db: Session = Depends(get_db)):
         .filter(
             models.Order.salesperson_id == user.id,
             models.Order.status != models.OrderStatus.draft,
+            models.Order.created_at >= _month_ago,
         )
         .group_by(models.OrderLineItem.product_id)
         .all()
@@ -294,7 +329,8 @@ def new_order_page(request: Request, db: Session = Depends(get_db)):
         pool_avail = pool.available_qty   if (pool  and pool.total_qty      > 0) else 0
         return alloc_rem + pool_avail
 
-    products = [p for p in products if _avail(p) > 0]
+    # Keep products with available stock, plus any already in the order being edited.
+    products = [p for p in products if _avail(p) > 0 or p.id in edit_lines]
 
     # Rebuild order_freq for the filtered product list only
     order_freq = {p.id: 0 for p in products}
@@ -324,6 +360,16 @@ def new_order_page(request: Request, db: Session = Depends(get_db)):
         lots=lots_map,
         prev_price_map=prev_price_map,
         today=_date.today().isoformat(),   # for date picker min= attribute
+        # Edit mode (None when creating a fresh order)
+        edit_order_id=edit_order.id if edit_order else None,
+        edit_customer_id=edit_customer.id if edit_customer else None,
+        edit_customer_name=edit_customer.name if edit_customer else None,
+        edit_delivery=(edit_order.delivery_date.date().isoformat()
+                       if edit_order and edit_order.delivery_date else ""),
+        edit_notes=(edit_order.order_notes if edit_order else "") or "",
+        edit_transport=(edit_order.transport if edit_order else "") or "",
+        edit_customer_po=(edit_order.customer_po if edit_order else "") or "",
+        edit_lines=edit_lines,
     )
 
 
@@ -362,6 +408,7 @@ def order_detail_page(order_id: int, request: Request, db: Session = Depends(get
             "unit_price":     li.unit_price,
             "line_total":     li.line_total,
             "lot_code":       lot.lot_code if lot else None,
+            "lot_note":       li.lot_note,
             "price_override": li.price_override,
             "override_reason":li.override_reason,
         })
@@ -570,7 +617,7 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
     # Flag products whose current stock (in metric tons) is below the average
     # weekly sales volume (in MT) — they need allocation control attention.
     # Weekly volume = MT sold over the last 8 weeks of order history ÷ 8.
-    from datetime import timedelta
+    from datetime import datetime, timedelta
     LOOKBACK_WEEKS = 8
     anchor = db.query(_func2.max(models.Order.created_at)).scalar() or datetime.utcnow()
     cutoff = anchor - timedelta(weeks=LOOKBACK_WEEKS)

@@ -128,6 +128,7 @@ def add_line(order_id: int, line: schemas.LineItemCreate, db: Session = Depends(
         line_total=line.quantity * line.unit_price,
         price_override=out_of_range,
         override_reason=line.override_reason if out_of_range else None,
+        lot_note=(line.lot_note.strip() if line.lot_note and line.lot_note.strip() else None),
     )
     db.add(new_line)
     db.commit()
@@ -155,6 +156,11 @@ def update_order_details(order_id: int, payload: schemas.OrderDetailsUpdate,
         order.transport = payload.transport
     if payload.customer_po is not None:
         order.customer_po = payload.customer_po
+    if payload.customer_id is not None:
+        customer = db.query(models.Customer).get(payload.customer_id)
+        if customer is None:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        order.customer_id = payload.customer_id
 
     db.commit()
     db.refresh(order)
@@ -182,6 +188,48 @@ def submit_order(order_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(order)
     return order
+
+
+@router.post("/{order_id}/reopen", response_model=schemas.OrderOut)
+def reopen_order(order_id: int, db: Session = Depends(get_db)):
+    """Move a submitted or rejected order back to DRAFT so the salesperson can edit it.
+
+    Submitted orders release the stock they had reserved; rejected orders already
+    released theirs at rejection time; drafts are returned unchanged.
+    """
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status == models.OrderStatus.draft:
+        return order   # already editable
+    if order.status == models.OrderStatus.submitted:
+        stock.return_on_reject(db, order)   # give reserved stock back
+    elif order.status == models.OrderStatus.rejected:
+        pass   # stock was already returned when it was rejected
+    else:
+        raise HTTPException(status_code=400,
+                            detail="This order can no longer be edited.")
+
+    order.status = models.OrderStatus.draft
+    order.reject_note = None
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.delete("/{order_id}/lines")
+def clear_lines(order_id: int, db: Session = Depends(get_db)):
+    """Remove all line items from a draft order (used when re-saving an edited order)."""
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != models.OrderStatus.draft:
+        raise HTTPException(status_code=400, detail="Can only edit lines on a draft order")
+    for line in list(order.line_items):
+        db.delete(line)
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{order_id}")
@@ -235,6 +283,7 @@ def duplicate_order(order_id: int, db: Session = Depends(get_db)):
             quantity=li.quantity,
             unit_price=li.unit_price,
             line_total=li.line_total,
+            lot_note=li.lot_note,
         )
         db.add(new_line)
 

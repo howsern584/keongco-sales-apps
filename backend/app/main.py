@@ -25,11 +25,12 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
 
-from .database import Base, engine
+from .database import Base, engine, run_lightweight_migrations
 from . import models  # noqa: F401
 from .routers import catalog, orders, allocations, admin_orders, photos, pages, invoices, users, customers, groups
 
 Base.metadata.create_all(bind=engine)
+run_lightweight_migrations()   # add columns introduced after the first release
 
 app = FastAPI(title="Keongco Sales Order-Entry App", version="0.2.0 (Phase 2)")
 
