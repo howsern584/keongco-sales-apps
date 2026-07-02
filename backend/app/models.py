@@ -97,6 +97,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)             # False = account disabled (can't log in)
     created_at = Column(DateTime, default=datetime.utcnow)
     group_id = Column(Integer, ForeignKey("user_groups.id"), nullable=True)  # None = individual
+    prices_seen_at = Column(DateTime, nullable=True)  # last time this user viewed the Price Updates list
 
     group = relationship("UserGroup", back_populates="members")
 
@@ -325,3 +326,22 @@ class PriceHistory(Base):
     old_price = Column(Float, nullable=False)
     new_price = Column(Float, nullable=False)
     changed_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PriceChangeEvent(Base):
+    """One row per price FIELD that changed when admin edits a product's pricing.
+
+    Feeds the salesperson-facing "Price Updates" notifications. Separate from
+    PriceHistory (which stays the base-price audit trail used for the ↑/↓ arrows)
+    because this tracks base/special/floor/ceiling and allows NULL old/new values
+    to represent a price being added or cleared.
+    """
+    __tablename__ = "price_change_events"
+
+    id         = Column(Integer, primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    changed_by = Column(Integer, ForeignKey("users.id"),    nullable=False)  # admin who changed it
+    field      = Column(String, nullable=False)   # 'base' | 'special' | 'floor' | 'ceiling'
+    old_value  = Column(Float, nullable=True)     # None = the field was not set before
+    new_value  = Column(Float, nullable=True)     # None = the field was cleared
+    changed_at = Column(DateTime, default=datetime.utcnow, index=True)

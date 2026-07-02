@@ -433,6 +433,76 @@ def order_detail_page(order_id: int, request: Request, db: Session = Depends(get
     )
 
 
+# ---------- Price Updates (notifications) ------------------------------------
+
+@router.get("/app/price-updates", response_class=HTMLResponse)
+def price_updates_page(request: Request, db: Session = Depends(get_db)):
+    """Salesperson-facing feed of recent price changes. Opening this page marks all
+    changes up to now as 'seen' for this user (clears the bell badge)."""
+    from datetime import datetime as _dt
+    user, redirect = login_required(request, db)
+    if redirect:
+        return redirect
+
+    prev_seen = user.prices_seen_at   # capture BEFORE marking seen, to flag what's new
+
+    events = (
+        db.query(models.PriceChangeEvent)
+        .order_by(models.PriceChangeEvent.changed_at.desc())
+        .limit(100)
+        .all()
+    )
+    # Bulk-load product descriptions and changer names — no N+1.
+    prod_ids = {e.product_id for e in events}
+    user_ids = {e.changed_by for e in events}
+    prods = {p.id: p for p in db.query(models.Product).filter(models.Product.id.in_(prod_ids)).all()} if prod_ids else {}
+    users = {u.id: u for u in db.query(models.User).filter(models.User.id.in_(user_ids)).all()} if user_ids else {}
+
+    _LABELS = {"floor": "Min", "base": "Base", "ceiling": "Max", "special": "Discount"}
+    _ORDER  = {"floor": 0, "base": 1, "ceiling": 2, "special": 3}  # display order
+
+    def _fmt(v):
+        return f"RM {v:.2f}" if v is not None else None
+
+    def _part(e):
+        """Compact one-field change, e.g. 'Base 20.50→22.00 ▲' or 'Discount set 9.90'."""
+        old_s, new_s = _fmt(e.old_value), _fmt(e.new_value)
+        if old_s is None and new_s is not None:
+            text, up = f"set {new_s}", None
+        elif new_s is None and old_s is not None:
+            text, up = f"removed (was {old_s})", None
+        elif old_s is not None and new_s is not None:
+            up = (e.new_value or 0) > (e.old_value or 0)
+            text = f"{old_s}→{new_s} {'▲' if up else '▼'}"
+        else:
+            text, up = "changed", None
+        return {"label": _LABELS.get(e.field, e.field), "text": text, "up": up}
+
+    # Group all fields from one edit (same product + same timestamp) into ONE row.
+    groups = {}   # (product_id, changed_at) -> list[event]   (dict preserves insert order)
+    for e in events:                       # events are already newest-first
+        groups.setdefault((e.product_id, e.changed_at), []).append(e)
+
+    rows = []
+    for (product_id, changed_at), evs in groups.items():
+        first = evs[0]
+        prod = prods.get(product_id)
+        parts = [_part(e) for e in sorted(evs, key=lambda e: _ORDER.get(e.field, 9))]
+        rows.append({
+            "product": prod.description if prod else f"Product #{product_id}",
+            "parts":   parts,
+            "by":      (users.get(first.changed_by).name if users.get(first.changed_by) else "—"),
+            "when":    changed_at.strftime("%d %b %Y, %H:%M") if changed_at else "",
+            "is_new":  (first.changed_by != user.id and (prev_seen is None or (changed_at and changed_at > prev_seen))),
+        })
+
+    # Mark everything up to now as seen for this user (clears the badge).
+    user.prices_seen_at = _dt.utcnow()
+    db.commit()
+
+    return render("price_updates.html", rows=rows, role=user.role.value, user=user)
+
+
 # ---------- Products ---------------------------------------------------------
 
 @router.get("/app/products", response_class=HTMLResponse)

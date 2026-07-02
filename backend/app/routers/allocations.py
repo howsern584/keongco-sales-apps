@@ -144,11 +144,15 @@ def update_product_price(product_id: int, payload: schemas.ProductPriceUpdate,
     if not admin_id:
         raise HTTPException(status_code=401, detail="Not logged in")
 
-    old_price = product.base_price
+    # Snapshot old pricing so we can record exactly which fields changed (for the
+    # salesperson-facing Price Update notifications).
+    old_base, old_special = product.base_price, product.special_price
+    old_floor, old_ceiling = product.price_floor, product.price_ceiling
+
     record = models.PriceHistory(
         product_id=product_id,
         changed_by=admin_id,
-        old_price=old_price,
+        old_price=old_base,
         new_price=payload.base_price,
     )
     db.add(record)
@@ -162,6 +166,29 @@ def update_product_price(product_id: int, payload: schemas.ProductPriceUpdate,
     product.special_price = payload.special_price
     # remark: free-text brand/marking/packaging note
     product.remark = payload.remark if payload.remark and payload.remark.strip() else None
+
+    # Log a notification event for every price FIELD that actually changed.
+    # All fields from THIS edit share one timestamp so the Price Updates feed can
+    # group them into a single line per product (min/base/max/discount together).
+    now = datetime.utcnow()
+    def _changed(a, b):
+        if a is None and b is None:
+            return False
+        if (a is None) != (b is None):
+            return True
+        return abs(a - b) > 1e-6
+    for field_name, old_v, new_v in [
+        ("base",    old_base,    product.base_price),
+        ("special", old_special, product.special_price),
+        ("floor",   old_floor,   product.price_floor),
+        ("ceiling", old_ceiling, product.price_ceiling),
+    ]:
+        if _changed(old_v, new_v):
+            db.add(models.PriceChangeEvent(
+                product_id=product_id, changed_by=admin_id,
+                field=field_name, old_value=old_v, new_value=new_v,
+                changed_at=now,
+            ))
 
     db.commit()
     db.refresh(record)

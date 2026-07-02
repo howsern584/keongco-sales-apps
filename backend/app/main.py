@@ -27,7 +27,7 @@ import os
 
 from .database import Base, engine, run_lightweight_migrations
 from . import models  # noqa: F401
-from .routers import catalog, orders, allocations, admin_orders, photos, pages, invoices, users, customers, groups
+from .routers import catalog, orders, allocations, admin_orders, photos, pages, invoices, users, customers, groups, notifications
 
 Base.metadata.create_all(bind=engine)
 run_lightweight_migrations()   # add columns introduced after the first release
@@ -48,6 +48,7 @@ app.include_router(invoices.router)
 app.include_router(users.router)
 app.include_router(customers.router)
 app.include_router(groups.router)
+app.include_router(notifications.router)
 
 # HTML page routes (the screens users see)
 app.include_router(pages.router)

@@ -45,9 +45,19 @@ def get_db():
 # missing TABLES, never new columns on existing ones, so we add them by hand.
 # Each entry: (table, column, SQL type). Safe to run on every startup.
 _ADDED_COLUMNS = [
-    ("lots",             "sale_priority", "INTEGER"),
-    ("order_line_items", "lot_note",      "TEXT"),
+    ("lots",             "sale_priority",    "INTEGER"),
+    ("order_line_items", "lot_note",         "TEXT"),
+    # Customer master mirror (Phase 3a)
+    ("customers",        "contact_person",   "TEXT"),
+    ("customers",        "delivery_address", "TEXT"),
+    ("customers",        "payment_term",     "TEXT"),
+    ("customers",        "credit_limit",     "REAL"),
+    # Per-order buyer PO reference
+    ("orders",           "customer_po",      "VARCHAR(60)"),
+    # Price-change notifications: when this user last viewed the Price Updates list
+    ("users",            "prices_seen_at",   "DATETIME"),
 ]
+# New TABLES (customer_prices, price_change_events) are created by create_all().
 
 
 def run_lightweight_migrations():
