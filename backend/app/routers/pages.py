@@ -261,14 +261,17 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
         .all()
     )
 
-    # ── Edit mode: preload an existing DRAFT order owned by this salesperson ──
+    # ── Edit mode: preload an existing DRAFT order the current user OWNS ──
+    # Own orders only — a salesperson (incl. an admin acting as a rep) may edit
+    # only their own order. Admins cannot edit another rep's order (approve/reject
+    # only); enforced here server-side, not just by hiding the button.
     edit_order = None
     edit_lines = {}          # product_id -> {qty, price, lot_id, lot_note}
     edit_customer = None
     if edit:
         _o = db.query(models.Order).get(edit)
         if (_o and _o.status == models.OrderStatus.draft
-                and (_o.salesperson_id == user.id or user.role == models.UserRole.admin)):
+                and _o.salesperson_id == user.id):
             edit_order = _o
             edit_customer = db.query(models.Customer).get(_o.customer_id)
             for li in _o.line_items:
@@ -422,6 +425,10 @@ def order_detail_page(order_id: int, request: Request, db: Session = Depends(get
         total=total,
         role=user.role.value,
         admin_id=user.id if user.role == models.UserRole.admin else None,
+        # Only the order's own owner may edit it. Admins are sales reps too, so they
+        # can edit THEIR OWN orders — but for another rep's order an admin may only
+        # approve/reject, not edit.
+        is_own_order=(order.salesperson_id == user.id),
         user=user,
     )
 

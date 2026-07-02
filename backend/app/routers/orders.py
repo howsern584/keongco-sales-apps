@@ -18,11 +18,12 @@ are enforced in Phase 2c -- marked with TODO below so we don't forget.
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import models, schemas, stock
+from .pages import get_current_user
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -191,15 +192,26 @@ def submit_order(order_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{order_id}/reopen", response_model=schemas.OrderOut)
-def reopen_order(order_id: int, db: Session = Depends(get_db)):
-    """Move a submitted or rejected order back to DRAFT so the salesperson can edit it.
+def reopen_order(order_id: int, request: Request, db: Session = Depends(get_db)):
+    """Move a submitted or rejected order back to DRAFT so its owner can edit it.
 
     Submitted orders release the stock they had reserved; rejected orders already
     released theirs at rejection time; drafts are returned unchanged.
+
+    Own orders only: reopening is the first step of editing, so only the order's
+    own salesperson may do it. An admin can edit their OWN orders (they sell too)
+    but may only approve/reject another rep's order — never reopen/edit it.
     """
     order = db.query(models.Order).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    if order.salesperson_id != user.id:
+        raise HTTPException(status_code=403,
+                            detail="You can only edit your own orders.")
 
     if order.status == models.OrderStatus.draft:
         return order   # already editable

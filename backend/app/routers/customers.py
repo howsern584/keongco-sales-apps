@@ -74,16 +74,14 @@ def require_admin(request: Request, db: Session):
 @router.get("/search", response_model=list[CustomerOut])
 def search_customers(request: Request, q: str = "", db: Session = Depends(get_db)):
     """Search active customers for the new-order dropdown.
-    Salespersons only see their own customers; admins see all."""
+    All logged-in users (salespeople and admins) can search every active customer.
+    (Per business decision: reps are not restricted to assigned customers, since
+    customer->salesman assignments are not yet synced from Sage.)"""
     user = get_current_user(request, db)
     if user is None:
         raise HTTPException(status_code=401, detail="Login required.")
 
     query = db.query(models.Customer).filter(models.Customer.is_active == True)
-
-    # Salespersons: only their assigned customers
-    if user.role == models.UserRole.salesperson:
-        query = query.filter(models.Customer.salesperson_id == user.id)
 
     if q.strip():
         query = query.filter(models.Customer.name.ilike(f"%{q.strip()}%"))
@@ -242,15 +240,14 @@ def activate_customer(customer_id: int, request: Request, db: Session = Depends(
 @router.get("/{customer_id}", response_model=CustomerOut)
 def get_customer(customer_id: int, request: Request, db: Session = Depends(get_db)):
     """Return one customer's full profile, so the order screen can auto-fill it.
-    Salespeople may only read their own assigned customers; admins read any."""
+    Any logged-in user may read any customer (reps are not restricted to assigned
+    customers — see search_customers)."""
     user = get_current_user(request, db)
     if user is None:
         raise HTTPException(status_code=401, detail="Login required.")
     cust = db.query(models.Customer).get(customer_id)
     if cust is None:
         raise HTTPException(status_code=404, detail="Customer not found.")
-    if user.role == models.UserRole.salesperson and cust.salesperson_id != user.id:
-        raise HTTPException(status_code=403, detail="Not your customer.")
     return cust
 
 
@@ -267,8 +264,6 @@ def get_customer_prices(customer_id: int, request: Request, db: Session = Depend
     cust = db.query(models.Customer).get(customer_id)
     if cust is None:
         raise HTTPException(status_code=404, detail="Customer not found.")
-    if user.role == models.UserRole.salesperson and cust.salesperson_id != user.id:
-        raise HTTPException(status_code=403, detail="Not your customer.")
     rows = db.query(models.CustomerPrice).filter(
         models.CustomerPrice.customer_id == customer_id
     ).all()

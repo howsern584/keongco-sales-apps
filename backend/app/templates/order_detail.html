@@ -164,8 +164,10 @@
 </button>
 {% endif %}
 
-<!-- Salesperson: edit their own draft / submitted / rejected order and resubmit -->
-{% if role == 'salesperson' and order.status in ('draft', 'submitted', 'rejected') %}
+<!-- Edit an order and resubmit — only the order's OWN owner may do this.
+     Admins are sales reps too, so they can edit their own orders; but for another
+     rep's order an admin sees only Approve/Reject (no Edit). -->
+{% if is_own_order and order.status in ('draft', 'submitted', 'rejected') %}
 <button onclick="editOrder()"
         class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-3 flex items-center justify-center gap-2">
   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

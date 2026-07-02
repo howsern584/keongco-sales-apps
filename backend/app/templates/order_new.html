@@ -710,6 +710,14 @@ document.addEventListener('click', e => {
   }
 });
 
+// The number pad is a self-contained modal: its own key taps must NOT bubble to
+// document. Otherwise every digit press fires all the page-level outside-click
+// handlers — including one close-handler per searchable dropdown (40+ of them),
+// each doing layout reads/writes — which made entering a quantity feel laggy.
+// The key buttons' own onclick handlers already ran (target phase) before this.
+['pointerdown', 'click'].forEach(evt =>
+  document.getElementById('numpad').addEventListener(evt, e => e.stopPropagation()));
+
 // ── View mode (simple / comprehensive) ────────────────────────────────────
 let currentMode = localStorage.getItem('orderMode') || 'simple';
 
