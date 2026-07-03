@@ -293,35 +293,6 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
     prev_price_map = _bulk_prev_prices(db)
     fcfs_pools  = _bulk_pools(db)
 
-    # Order volume: units this salesperson has sold per product over the LAST
-    # MONTH (30 days). Anchored to the latest order in the system so historical
-    # test data still shows numbers; in production the latest order ≈ today, so
-    # this is effectively "sold in the last month". Shown as "×qty" per product
-    # and used to sort their regulars to the top.
-    from datetime import datetime, timedelta
-    from sqlalchemy import func as _func
-    _anchor = db.query(_func.max(models.Order.created_at)).scalar() or datetime.utcnow()
-    _month_ago = _anchor - timedelta(days=30)
-    freq_rows = (
-        db.query(
-            models.OrderLineItem.product_id,
-            _func.sum(models.OrderLineItem.quantity).label("total_qty"),
-        )
-        .join(models.Order, models.Order.id == models.OrderLineItem.order_id)
-        .filter(
-            models.Order.salesperson_id == user.id,
-            models.Order.status != models.OrderStatus.draft,
-            models.Order.created_at >= _month_ago,
-        )
-        .group_by(models.OrderLineItem.product_id)
-        .all()
-    )
-    # Build freq map with 0 as default for every active product
-    order_freq = {p.id: 0 for p in products}
-    for r in freq_rows:
-        if r.product_id in order_freq:
-            order_freq[r.product_id] = int(r.total_qty)
-
     # Option B: hide products with 0 available stock (alloc + pool = 0).
     # Products with no allocation AND no pool are also hidden — admin controls
     # visibility by setting an allocation or pool.
@@ -335,21 +306,10 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
     # Keep products with available stock, plus any already in the order being edited.
     products = [p for p in products if _avail(p) > 0 or p.id in edit_lines]
 
-    # Rebuild order_freq for the filtered product list only
-    order_freq = {p.id: 0 for p in products}
-    for r in freq_rows:
-        if r.product_id in order_freq:
-            order_freq[r.product_id] = int(r.total_qty)
-
-    # Sort:  1) most-ordered items first (regulars)
-    #        2) never-ordered items grouped by canonical category order (ON→SH→GI→PO→GA→CO→PA→BE→SP→DC)
-    #        3) natural sort on description within each tier/category
-    products.sort(key=lambda p: (
-        0 if order_freq[p.id] > 0 else 1,   # regulars before newcomers
-        -order_freq[p.id],                   # highest qty first within regulars
-        _cat_rank(p),                        # canonical category sequence
-        _nat_key(p.description),             # description → size → weight (natural numeric sort)
-    ))
+    # Sort in the SAME sequence as the Products page: canonical category order
+    # (ON→SH→GI→PO→GA→CO→PA→BE→SP→DC), then natural sort on description within
+    # each category. Keeps both screens showing products in the same order.
+    products = _sort_products(products)
 
     from datetime import date as _date
     return render("order_new.html",
@@ -357,7 +317,6 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
         role=user.role.value,
         user=user,
         products=products,
-        order_freq=order_freq,
         allocations=allocations,
         fcfs_pools=fcfs_pools,
         lots=lots_map,

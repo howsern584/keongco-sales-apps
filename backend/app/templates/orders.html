@@ -47,17 +47,29 @@
 {% if orders %}
 <!-- All order cards — filtered in JS -->
 <div id="orders-list" class="space-y-2">
+  {# Whole-card background tint by status. Written as literal utility classes
+     (not @apply) so the Tailwind CDN picks them up — same as the filter chips.
+     white=draft, blue=submitted, green=approved, red=rejected, purple=In Sage. #}
+  {% set row_tint = {
+    'draft':          'bg-white     border-gray-200',
+    'submitted':      'bg-blue-50   border-blue-200',
+    'approved':       'bg-green-50  border-green-200',
+    'rejected':       'bg-red-50    border-red-200',
+    'pushed_to_sage': 'bg-purple-50 border-purple-200'
+  } %}
   {% for order in orders %}
   <div class="relative order-card"
        data-status="{{ order.status }}"
        data-search="{{ order.id }} {{ order.customer_name | lower }} {{ order.salesperson_name | lower }} {{ order.created_at[:10] }}">
 
-    <!-- ── Card header (tap to expand / collapse) ── -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <!-- ── Card header (tap to expand / collapse) ──
+         Whole-card background is tinted by status (row-<status> in base.html):
+         white=draft, blue=submitted, green=approved, red=rejected, purple=In Sage. -->
+    <div class="{{ row_tint.get(order.status, 'bg-white border-gray-200') }} rounded-xl shadow-sm border overflow-hidden">
 
       <!-- Main row — tappable to expand -->
       <div onclick="toggleCard({{ order.id }}, this)"
-           class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none active:bg-gray-50">
+           class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none active:bg-black/5">
 
         <!-- Bill # + status badge -->
         <div class="flex flex-col min-w-0 flex-1">
@@ -94,7 +106,7 @@
 
       <!-- Rejection note (always visible if present) -->
       {% if order.status == 'rejected' and order.reject_note %}
-      <div class="mx-3 mb-2 text-xs text-red-600 bg-red-50 rounded px-3 py-1.5">
+      <div class="mx-3 mb-2 text-xs text-red-700 bg-red-100 rounded px-3 py-1.5">
         <span class="font-semibold">Rejected:</span> {{ order.reject_note }}
       </div>
       {% endif %}
@@ -105,8 +117,8 @@
         <div id="items-loading-{{ order.id }}" class="px-4 py-3 text-xs text-gray-400 text-center">
           Loading…
         </div>
-        <!-- Items table (populated by JS) -->
-        <div id="items-body-{{ order.id }}" class="hidden divide-y divide-gray-50">
+        <!-- Items table (populated by JS) — white so details stay readable on a tinted card -->
+        <div id="items-body-{{ order.id }}" class="hidden divide-y divide-gray-50 bg-white">
           <!-- rows injected here -->
         </div>
         <!-- Footer: link to full detail page -->

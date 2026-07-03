@@ -51,7 +51,7 @@
 <!-- ── Pending orders ── -->
 <div id="pane-pending">
   {% if pending_orders %}
-  <div class="space-y-3 md:grid md:grid-cols-2 md:gap-3 md:space-y-0">
+  <div class="space-y-3">
     {% for order in pending_orders %}
     <a href="/app/orders/{{ order.id }}"
        class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
@@ -372,19 +372,33 @@
 
 </div>
 
-<!-- Reset Password Modal -->
+<!-- Password Modal -->
 <div id="reset-pw-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3">
-    <h3 class="font-bold text-gray-800">Reset Password</h3>
-    <p class="text-sm text-gray-500">Setting new password for: <strong id="reset-pw-name"></strong></p>
-    <input id="reset-pw-value" type="password" placeholder="New password (min. 4 chars)"
-           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+    <h3 class="font-bold text-gray-800">Password</h3>
+    <p class="text-sm text-gray-500">For: <strong id="reset-pw-name"></strong></p>
+
+    <!-- Why the current password can't be shown -->
+    <div class="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
+      For security, the current password is stored scrambled and cannot be shown to anyone —
+      not even to admins. You can either <strong>leave it unchanged</strong> or <strong>set a new one</strong> below.
+    </div>
+
+    <label class="block text-xs text-gray-500">New password</label>
+    <div class="relative">
+      <input id="reset-pw-value" type="password" placeholder="Leave blank to keep current"
+             class="w-full border border-gray-300 rounded-lg px-3 py-2 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
+      <button type="button" onclick="toggleResetPwVisibility()"
+              id="reset-pw-eye"
+              class="absolute inset-y-0 right-0 px-3 text-xs text-gray-500 hover:text-gray-700">Show</button>
+    </div>
+
     <div id="reset-pw-msg" class="hidden text-sm text-center rounded-lg py-2"></div>
     <div class="flex gap-2">
       <button onclick="closeResetPw()"
-              class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancel</button>
+              class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Keep current</button>
       <button onclick="doResetPw()"
-              class="flex-1 bg-brand text-white font-semibold py-2 rounded-lg text-sm">Save</button>
+              class="flex-1 bg-brand text-white font-semibold py-2 rounded-lg text-sm">Set new password</button>
     </div>
   </div>
 </div>
@@ -1074,7 +1088,7 @@ async function loadUsers() {
     ].join('');
 
     return `
-    <div class="${u.is_active ? '' : 'opacity-60'}">
+    <div class="${u.is_active ? '' : 'bg-gray-100 opacity-70'}">
       <!-- Main row -->
       <div class="px-4 py-3 flex items-center gap-2">
         <div class="flex-1 min-w-0">
@@ -1108,11 +1122,11 @@ async function loadUsers() {
           ${u.is_active
             ? `<button onclick="toggleUser(${u.id}, false)"
                        class="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition">
-                 Off
+                 Turn Off
                </button>`
             : `<button onclick="toggleUser(${u.id}, true)"
-                       class="text-xs px-2 py-1 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition">
-                 On
+                       class="text-xs px-2 py-1 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition">
+                 Turn On
                </button>`
           }
           <button onclick="deleteUser(${u.id}, '${u.name.replace(/'/g,"&#39;")}')"
@@ -1248,12 +1262,27 @@ function openResetPw(userId, userName) {
 
 function closeResetPw() {
   _resetPwUserId = null;
+  // Reset the show/hide toggle back to hidden for next time.
+  const input = document.getElementById('reset-pw-value');
+  const eye   = document.getElementById('reset-pw-eye');
+  if (input) input.type = 'password';
+  if (eye)   eye.textContent = 'Show';
   document.getElementById('reset-pw-modal').classList.add('hidden');
+}
+
+// Eye toggle: let the admin see the NEW password they are typing.
+function toggleResetPwVisibility() {
+  const input = document.getElementById('reset-pw-value');
+  const eye   = document.getElementById('reset-pw-eye');
+  if (input.type === 'password') { input.type = 'text';     eye.textContent = 'Hide'; }
+  else                          { input.type = 'password'; eye.textContent = 'Show'; }
 }
 
 async function doResetPw() {
   const pw = document.getElementById('reset-pw-value').value;
-  if (!pw || pw.length < 4) {
+  // Blank means "keep the current password" — just close, no change.
+  if (!pw) { closeResetPw(); return; }
+  if (pw.length < 4) {
     showResetPwMsg('Password must be at least 4 characters.', false); return;
   }
   const r = await fetch(`/admin/users/${_resetPwUserId}/reset-password`, {

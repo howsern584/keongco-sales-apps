@@ -83,140 +83,20 @@
   {# ── SIMPLE MODE ── compact rows, grouped by category like full view #}
   <div id="list-simple" class="space-y-2">
 
-  {# ── Regulars card (freq > 0) ── #}
-  {% set ns = namespace(has_regulars=false) %}
-  {% for p in products %}{% if order_freq[p.id] > 0 %}{% set ns.has_regulars = true %}{% endif %}{% endfor %}
-
-  {% if ns.has_regulars %}
-  <div>
-    <div class="flex items-center gap-2 mb-1">
-      <span class="text-xs font-semibold text-brand uppercase tracking-wide">⭐ Your Regulars</span>
-    </div>
-    <div class="bg-white rounded-xl shadow-sm border border-brand/20 divide-y divide-gray-100">
+  {# Single list grouped by category — same sequence as the Products page. #}
+  {% set cat_order_s = ['on','sh','gi','po','ga','co','pa','be','sp','dc'] %}
+  {% for cat in cat_order_s %}
+    {% set ns3 = namespace(items=[]) %}
     {% for p in products %}
-    {% set freq = order_freq[p.id] %}
-    {% if freq > 0 %}
-    {% set s_alloc = allocations.get(p.id) %}
-    {% set s_pool  = fcfs_pools.get(p.id) %}
-    {% set s_alloc_rem  = s_alloc.remaining_qty if (s_alloc and s_alloc.allocated_qty > 0) else 0 %}
-    {% set s_pool_avail = s_pool.available_qty  if (s_pool  and s_pool.total_qty  > 0) else 0 %}
-    {% set s_avail = s_alloc_rem + s_pool_avail %}
-    {% set s_out = (s_avail == 0) %}
-    {% set lot_list = lots.get(p.id, []) %}
-
-    <div>
-      <div class="flex items-start gap-2 px-3 py-1.5">
-        <div class="flex-1 min-w-0 cursor-pointer" onclick="toggleSimpleDetail({{ p.id }})">
-          <div class="flex items-center gap-1.5">
-            <span class="text-sm font-medium {% if s_out %}text-gray-400{% else %}text-gray-800{% endif %} leading-tight truncate">{{ p.description }}</span>
-            {% if not s_out %}<span class="text-xs text-brand font-semibold shrink-0">×{{ freq }}</span>{% endif %}
-            <svg id="chevron-{{ p.id }}" class="w-3 h-3 text-gray-300 shrink-0 transition-transform duration-200 ml-auto" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-            </svg>
-          </div>
-          {% if p.remark %}<div class="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded inline-block truncate max-w-full">{{ p.remark }}</div>{% endif %}
-          <div class="flex items-center gap-1 text-xs mt-0.5 flex-wrap">
-            {% if p.price_ceiling %}<span class="text-gray-400">RM {{ "%.2f" | format(p.price_ceiling) }}</span><span class="text-gray-300">–</span>{% endif %}
-            <span class="font-semibold text-brand">RM {{ "%.2f" | format(p.base_price) }}</span>
-            {% if p.price_floor %}<span class="text-gray-300">–</span><span class="text-gray-400">RM {{ "%.2f" | format(p.price_floor) }}</span>{% endif %}
-            <span class="text-gray-300">/</span><span class="text-gray-400">{{ p.unit.value }}</span>
-            {% if p.special_price %}<button onclick="setQuickPrice({{ p.id }}, {{ p.special_price }}); event.stopPropagation();" class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold active:bg-amber-200">★ {{ "%.2f"|format(p.special_price) }}</button>{% endif %}
-          </div>
-        </div>
-        <div class="flex flex-col items-end gap-0.5 shrink-0 pt-0.5">
-          <div class="flex items-center gap-1">
-            <input type="number" id="simple-price-{{ p.id }}"
-                   value="{{ "%.2f" | format(p.base_price) }}"
-                   min="{{ p.price_floor if p.price_floor else '0' }}"
-                   max="{{ p.price_ceiling if p.price_ceiling else '' }}"
-                   step="0.01" oninput="onSimplePriceInput({{ p.id }})"
-                   onchange="checkPriceRange({{ p.id }}); updateTotal()"
-                   inputmode="none" readonly data-numpad="price" data-label="{{ p.description }}"
-                   class="w-14 text-center border border-gray-200 rounded-lg py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand {% if s_out %}bg-gray-50 text-gray-400{% endif %}"/>
-            <button onclick="changeQty({{ p.id }}, -1)"
-                    class="w-6 h-6 rounded-full border border-gray-300 {% if s_out %}text-gray-300{% else %}text-gray-600 hover:bg-gray-100{% endif %} flex items-center justify-center text-sm leading-none">−</button>
-            <input type="number" id="qty-{{ p.id }}" value="0" min="0"
-                   oninput="onQtyInput({{ p.id }})"
-                   inputmode="none" readonly data-numpad="qty" data-label="{{ p.description }}"
-                   class="w-9 text-center border border-gray-300 rounded-lg py-0.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand"/>
-            <button onclick="changeQty({{ p.id }}, 1)"
-                    class="w-6 h-6 rounded-full {% if s_out %}bg-gray-300{% else %}bg-brand hover:bg-brand-dark{% endif %} text-white flex items-center justify-center text-sm leading-none">+</button>
-          </div>
-          {% if s_out %}<span class="text-xs text-gray-400 italic">out of stock</span>
-          {% else %}<span class="text-xs text-green-600 font-medium">{{ s_avail }} avail</span>{% endif %}
-        </div>
-      </div>
-      {# Expandable detail panel #}
-      <div id="simple-detail-{{ p.id }}" class="hidden px-3 pb-2 bg-gray-50 border-t border-gray-100">
-        <div class="flex flex-wrap gap-1 pt-2 mb-1.5">
-          {% if s_avail > 0 %}<span class="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full font-medium">✓ {{ s_avail }} avail</span>{% endif %}
-          {% if s_alloc and s_alloc.allocated_qty > 0 %}<span class="text-xs {% if s_alloc.remaining_qty == 0 %}bg-red-50 text-red-600{% elif (s_alloc.remaining_qty / s_alloc.allocated_qty) < 0.2 %}bg-amber-50 text-amber-700{% else %}bg-blue-50 text-blue-700{% endif %} px-1.5 py-0.5 rounded-full">My alloc: {{ s_alloc.remaining_qty }}/{{ s_alloc.allocated_qty }}</span>{% endif %}
-          {% if s_pool and s_pool.total_qty > 0 %}<span class="text-xs {% if s_pool.available_qty == 0 %}bg-red-50 text-red-600{% else %}bg-purple-50 text-purple-700{% endif %} px-1.5 py-0.5 rounded-full">Pool: {{ s_pool.available_qty }}/{{ s_pool.total_qty }}</span>{% endif %}
-          {% if s_out %}<span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full italic">{% if not (s_alloc and s_alloc.allocated_qty > 0) and not (s_pool and s_pool.total_qty > 0) %}No allocation — contact admin{% else %}Out of stock{% endif %}</span>{% endif %}
-          {% set prev = prev_price_map.get(p.id) %}
-          {% if prev is not none and p.base_price != prev %}
-            {% if p.base_price > prev %}<span class="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full">↑ was RM {{ "%.2f" | format(prev) }}</span>
-            {% else %}<span class="text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">↓ was RM {{ "%.2f" | format(prev) }}</span>{% endif %}
-          {% endif %}
-        </div>
-        {% if lot_list %}
-        <div class="flex flex-col gap-1">
-          <div class="flex items-center gap-1.5">
-            <span class="text-xs text-gray-400 shrink-0">Lot:</span>
-            <select id="slot-{{ p.id }}"
-                    class="flex-1 border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand">
-              <option value="">Auto — {{ lot_list[0].lot_code }} (default order)</option>
-              {% for lot in lot_list %}
-              <option value="{{ lot.id }}">{{ lot.lot_code }} · {{ lot.received_date | string | truncate(10, true, '') }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <input id="snote-{{ p.id }}" type="text" placeholder="Remark on lot (optional)"
-                 class="w-full border border-gray-200 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand"/>
-        </div>
-        {% endif %}
-      </div>
-      {# Override warning #}
-      <div id="override-row-{{ p.id }}" class="hidden px-3 pb-1.5">
-        <div class="flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-          <span class="text-amber-500 text-xs shrink-0">⚠</span>
-          <div class="flex-1 min-w-0">
-            <p id="override-msg-{{ p.id }}" class="text-xs text-amber-700 font-medium mb-1"></p>
-            <input type="text" id="override-reason-{{ p.id }}" placeholder="Reason required"
-                   class="w-full border border-amber-300 rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"/>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% endif %}
+      {% if p.sage_item_code[:2].lower() == cat %}
+        {% set ns3.items = ns3.items + [p] %}
+      {% endif %}
     {% endfor %}
-    </div>{# end regulars card #}
-  </div>
-  {% endif %}{# end has_regulars #}
-
-  {# ── Browse All: unordered items grouped by category ── #}
-  {% set ns2 = namespace(has_new=false) %}
-  {% for p in products %}{% if order_freq[p.id] == 0 %}{% set ns2.has_new = true %}{% endif %}{% endfor %}
-
-  {% if ns2.has_new %}
-  <div>
-    <div class="flex items-center gap-2 mb-1">
-      <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">📦 Browse All</span>
-      <span class="text-xs text-gray-400">— by category</span>
-    </div>
-    {% set cat_order_s = ['on','sh','gi','po','ga','co','pa','be','sp','dc'] %}
-    {% for cat in cat_order_s %}
-      {% set ns3 = namespace(items=[]) %}
-      {% for p in products %}
-        {% if order_freq[p.id] == 0 and p.sage_item_code[:2].lower() == cat %}
-          {% set ns3.items = ns3.items + [p] %}
-        {% endif %}
-      {% endfor %}
-      {% if ns3.items %}
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 mb-2">
-        <div class="px-3 py-1.5 bg-gray-50 rounded-t-xl">
-          <span class="text-xs font-bold text-gray-600 uppercase tracking-wider">{{ cat | upper }}</span>
-        </div>
+    {% if ns3.items %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 mb-2">
+      <div class="px-3 py-1.5 bg-gray-50 rounded-t-xl">
+        <span class="text-xs font-bold text-gray-600 uppercase tracking-wider">{{ cat | upper }}</span>
+      </div>
         {% for p in ns3.items %}
         {% set s_alloc = allocations.get(p.id) %}
         {% set s_pool  = fcfs_pools.get(p.id) %}
@@ -312,131 +192,26 @@
       </div>
       {% endif %}
     {% endfor %}
-  </div>
-  {% endif %}{# has_new #}
 
   </div>{# end list-simple #}
 
   {# ── COMPREHENSIVE MODE ── sections + category headers + full detail #}
   <div id="list-comprehensive" class="hidden space-y-3">
 
-    {% set ns = namespace(in_new_section=false, last_cat='', has_regulars=false, has_new=false) %}
-
-    {# Check if we have any regulars at all #}
-    {% for p in products %}{% if order_freq[p.id] > 0 %}{% set ns.has_regulars = true %}{% endif %}{% endfor %}
-    {% for p in products %}{% if order_freq[p.id] == 0 %}{% set ns.has_new = true %}{% endif %}{% endfor %}
-
-    {# ── Regulars section ── #}
-    {% if ns.has_regulars %}
-    <div>
-      <div class="flex items-center gap-2 mb-1">
-        <span class="text-xs font-semibold text-brand uppercase tracking-wide">⭐ Your Regulars</span>
-        <span class="text-xs text-gray-400">— most ordered first</span>
-      </div>
-      <div class="bg-white rounded-xl shadow-sm border border-brand/20 divide-y divide-gray-100">
-        {% for p in products %}
-        {% set freq = order_freq[p.id] %}
-        {% if freq > 0 %}
-        {% set alloc = allocations.get(p.id) %}
-        {% set pool  = fcfs_pools.get(p.id) %}
-        {% set alloc_rem  = alloc.remaining_qty if (alloc and alloc.allocated_qty > 0) else 0 %}
-        {% set pool_avail = pool.available_qty  if (pool  and pool.total_qty  > 0) else 0 %}
-        {% set total_avail = alloc_rem + pool_avail %}
-        {% set lot_list = lots.get(p.id, []) %}
-        <div class="px-3 py-2 {% if total_avail == 0 %}opacity-50{% endif %}">
-          <div class="flex items-center gap-2">
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-1.5">
-                <span class="text-sm font-semibold {% if total_avail == 0 %}text-gray-400{% else %}text-gray-800{% endif %} leading-tight truncate">{{ p.description }}</span>
-                <span class="text-xs bg-brand/10 text-brand px-1.5 py-0.5 rounded-full font-semibold shrink-0">×{{ freq }}</span>
-              </div>
-              {% if p.remark %}<div class="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded inline-block truncate max-w-full">{{ p.remark }}</div>{% endif %}
-              <div class="flex items-center gap-1 mt-0.5 flex-wrap">
-                {% if p.price_ceiling %}<span class="text-xs text-gray-400">RM {{ "%.2f" | format(p.price_ceiling) }}</span><span class="text-xs text-gray-300">–</span>{% endif %}
-                <span class="text-xs font-semibold text-brand">RM {{ "%.2f" | format(p.base_price) }}</span>
-                {% if p.price_floor %}<span class="text-xs text-gray-300">–</span><span class="text-xs text-gray-400">RM {{ "%.2f" | format(p.price_floor) }}</span>{% endif %}
-                <span class="text-xs text-gray-400">/{{ p.unit.value }}</span>
-                {% set prev = prev_price_map.get(p.id) %}
-                {% if prev is not none and p.base_price != prev %}
-                  {% if p.base_price > prev %}<span class="text-xs text-green-600 font-semibold">↑</span>
-                  {% else %}<span class="text-xs text-red-500 font-semibold">↓</span>{% endif %}
-                {% endif %}
-              </div>
-            </div>
-            <div class="flex items-center gap-1 shrink-0">
-              <button onclick="changeQty({{ p.id }}, -1)"
-                      class="w-7 h-7 rounded-full border border-gray-300 {% if total_avail == 0 %}text-gray-300{% else %}text-gray-600 hover:bg-gray-100{% endif %} flex items-center justify-center text-base leading-none">−</button>
-              <input type="number" id="qty-detail-{{ p.id }}" value="0" min="0"
-                     oninput="onQtyInputDetail({{ p.id }})"
-                     inputmode="none" readonly data-numpad="qty" data-label="{{ p.description }}"
-                     class="w-10 text-center border border-gray-300 rounded-lg py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"/>
-              <button onclick="changeQty({{ p.id }}, 1)"
-                      class="w-7 h-7 rounded-full {% if total_avail == 0 %}bg-gray-300{% else %}bg-brand hover:bg-brand-dark{% endif %} text-white flex items-center justify-center text-base leading-none">+</button>
-            </div>
-          </div>
-          <!-- Stock badges -->
-          <div class="flex flex-wrap gap-1 mt-1">
-            {% if total_avail > 0 %}<span class="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full font-medium">✓ {{ total_avail }} avail</span>{% endif %}
-            {% if alloc and alloc.allocated_qty > 0 %}<span class="text-xs {% if alloc.remaining_qty == 0 %}bg-red-50 text-red-600{% elif (alloc.remaining_qty / alloc.allocated_qty) < 0.2 %}bg-amber-50 text-amber-700{% else %}bg-blue-50 text-blue-700{% endif %} px-1.5 py-0.5 rounded-full">My: {{ alloc.remaining_qty }}/{{ alloc.allocated_qty }}</span>{% endif %}
-            {% if pool and pool.total_qty > 0 %}<span class="text-xs {% if pool.available_qty == 0 %}bg-red-50 text-red-600{% else %}bg-purple-50 text-purple-700{% endif %} px-1.5 py-0.5 rounded-full">Pool: {{ pool.available_qty }}/{{ pool.total_qty }}</span>{% endif %}
-            {% if total_avail == 0 %}<span class="text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded-full">{% if not (alloc and alloc.allocated_qty > 0) and not (pool and pool.total_qty > 0) %}No allocation{% else %}Out of stock{% endif %}</span>{% endif %}
-          </div>
-          <!-- Price override row -->
-          <div id="price-row-{{ p.id }}" class="hidden mt-1.5 flex items-center gap-1.5">
-            <span class="text-xs text-gray-500">RM</span>
-            <input type="number" id="price-{{ p.id }}"
-                   value="{{ "%.2f" | format(p.base_price) }}"
-                   min="{{ p.price_floor if p.price_floor else '0' }}"
-                   max="{{ p.price_ceiling if p.price_ceiling else '' }}"
-                   step="0.01" onchange="checkPriceRange({{ p.id }}); updateTotal()"
-                   inputmode="none" readonly data-numpad="price" data-label="{{ p.description }}"
-                   class="w-20 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand"/>
-            <span class="text-xs text-gray-400">/ {{ p.unit.value }}</span>
-          </div>
-          <!-- Lot pick + remark -->
-          {% if lot_list %}
-          <div class="mt-1.5 flex flex-col gap-1">
-            <div class="flex items-center gap-1.5">
-              <span class="text-xs text-gray-400 shrink-0">Lot:</span>
-              <select id="lot-select-{{ p.id }}"
-                      class="flex-1 border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand">
-                <option value="">Auto — {{ lot_list[0].lot_code }} (default order)</option>
-                {% for lot in lot_list %}
-                <option value="{{ lot.id }}">{{ lot.lot_code }} · {{ lot.received_date | string | truncate(10, true, '') }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <input id="lot-note-{{ p.id }}" type="text" placeholder="Remark on lot (optional)"
-                   class="w-full border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand"/>
-          </div>
-          {% endif %}
-        </div>
+    {# Single list grouped by category — same sequence as the Products page. #}
+    {% set cat_order_c = ['on','sh','gi','po','ga','co','pa','be','sp','dc'] %}
+    {% for cat in cat_order_c %}
+      {% set ns2 = namespace(items=[]) %}
+      {% for p in products %}
+        {% if p.sage_item_code[:2].lower() == cat %}
+          {% set ns2.items = ns2.items + [p] %}
         {% endif %}
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}{# end regulars section #}
-
-    {# ── Browse All section: unordered items grouped by category ── #}
-    {% if ns.has_new %}
-    <div>
-      <div class="flex items-center gap-2 mb-1">
-        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">📦 All Products</span>
-        <span class="text-xs text-gray-400">— by category</span>
-      </div>
-      {% set cat_order_c = ['on','sh','gi','po','ga','co','pa','be','sp','dc'] %}
-      {% for cat in cat_order_c %}
-        {% set ns2 = namespace(items=[]) %}
-        {% for p in products %}
-          {% if order_freq[p.id] == 0 and p.sage_item_code[:2].lower() == cat %}
-            {% set ns2.items = ns2.items + [p] %}
-          {% endif %}
-        {% endfor %}
-        {% if ns2.items %}
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 mb-2">
-          <div class="px-3 py-1.5 bg-gray-50 rounded-t-xl">
-            <span class="text-xs font-bold text-gray-600 uppercase tracking-wider">{{ cat | upper }}</span>
-          </div>
+      {% endfor %}
+      {% if ns2.items %}
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 mb-2">
+        <div class="px-3 py-1.5 bg-gray-50 rounded-t-xl">
+          <span class="text-xs font-bold text-gray-600 uppercase tracking-wider">{{ cat | upper }}</span>
+        </div>
           {% for p in ns2.items %}
           {% set alloc = allocations.get(p.id) %}
           {% set pool  = fcfs_pools.get(p.id) %}
@@ -510,8 +285,6 @@
         </div>
         {% endif %}
       {% endfor %}
-    </div>
-    {% endif %}{# end has_new #}
 
   </div>{# end list-comprehensive #}
 
@@ -521,10 +294,24 @@
 <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-3 py-2 z-30">
   <div class="max-w-lg md:max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto">
 
+    <!-- Order preview — live list of everything with a quantity entered.
+         Collapsed by default; tap the "N items" chip below to expand. -->
+    <div id="order-preview" class="hidden mb-2 border border-gray-200 rounded-xl bg-gray-50 overflow-hidden">
+      <div id="preview-list" class="max-h-52 overflow-y-auto divide-y divide-gray-100"></div>
+    </div>
+
     <!-- Total + delivery date on one row -->
     <div class="flex items-center gap-2 mb-2">
       <span class="text-xs text-gray-500 shrink-0">Total</span>
       <span id="footer-total" class="font-bold text-base text-brand shrink-0">RM 0.00</span>
+      <!-- Tap to expand/collapse the order preview above -->
+      <button id="preview-toggle" type="button" onclick="togglePreview()"
+              class="hidden items-center gap-1 text-xs font-semibold text-brand bg-brand/10 rounded-full px-2.5 py-1 shrink-0 active:bg-brand/20">
+        <span id="preview-count">0 items</span>
+        <svg id="preview-chevron" class="w-3 h-3 transition-transform duration-200" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
+        </svg>
+      </button>
       <!-- Delivery date + transport (shown once customer selected) -->
       <div id="delivery-section" class="hidden flex-1 flex items-center gap-1.5 justify-end">
         <label class="text-xs text-gray-500 shrink-0">Deliver <span class="text-red-400">*</span></label>
@@ -771,6 +558,7 @@ const PRODUCTS = {
   {% for p in products %}
   {{ p.id }}: {
     id: {{ p.id }},
+    name: {{ p.description | tojson }},
     basePrice: {{ p.base_price }},
     priceFloor: {{ p.price_floor if p.price_floor else 'null' }},
     priceCeiling: {{ p.price_ceiling if p.price_ceiling else 'null' }},
@@ -1076,6 +864,134 @@ function updateTotal() {
     total += getQty(id) * getPrice(id);
   }
   document.getElementById('footer-total').textContent = `RM ${total.toFixed(2)}`;
+  renderPreview();
+}
+
+// ── Order preview ──────────────────────────────────────────────────────────
+// A live, collapsible list of every product that has a quantity entered, shown
+// in the sticky footer so the salesperson can review their order without
+// scrolling through the whole product list.
+let _previewOpen = false;
+
+function _escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+function renderPreview() {
+  const panel   = document.getElementById('order-preview');
+  const list    = document.getElementById('preview-list');
+  const toggle  = document.getElementById('preview-toggle');
+  const countEl = document.getElementById('preview-count');
+  if (!list || !toggle) return;
+
+  const rows = [];
+  let count = 0;
+  for (const id of Object.keys(PRODUCTS)) {
+    const qty = getQty(id);
+    if (qty <= 0) continue;
+    count++;
+    const p     = PRODUCTS[id];
+    const price = getPrice(id);
+    const sub   = qty * price;
+    const belowMin = (p.priceFloor !== null && price < p.priceFloor);
+    rows.push(`
+      <div class="px-3 py-2 text-xs">
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="scrollToProduct(${id})" class="flex-1 min-w-0 text-left">
+            <span class="font-medium text-gray-800 truncate block">${_escapeHtml(p.name)}</span>
+          </button>
+          <span class="font-semibold text-brand shrink-0">RM ${sub.toFixed(2)}</span>
+          <button type="button" onclick="removeFromOrder(${id})"
+                  class="w-6 h-6 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center shrink-0"
+                  aria-label="Remove">✕</button>
+        </div>
+        <!-- Inline price × qty controls — same numpad + sync as the product rows -->
+        <div class="flex items-center gap-1.5 mt-1.5 justify-end">
+          <span class="text-gray-400">RM</span>
+          <input type="number" id="pv-price-${id}" value="${price.toFixed(2)}"
+                 inputmode="none" readonly data-numpad="price" data-label="${_escapeHtml(p.name)}"
+                 onchange="onPreviewPrice(${id})"
+                 class="w-16 text-center border rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-brand ${belowMin ? 'border-red-300 text-red-600 bg-red-50' : 'border-gray-200'}"/>
+          <span class="text-gray-300">×</span>
+          <button type="button" onclick="changeQty(${id}, -1)"
+                  class="w-6 h-6 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-100 flex items-center justify-center text-sm leading-none">−</button>
+          <input type="number" id="pv-qty-${id}" value="${qty}"
+                 inputmode="none" readonly data-numpad="qty" data-label="${_escapeHtml(p.name)}"
+                 onchange="onPreviewQty(${id})"
+                 class="w-10 text-center border border-gray-300 rounded-lg py-0.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand"/>
+          <button type="button" onclick="changeQty(${id}, 1)"
+                  class="w-6 h-6 rounded-full bg-brand hover:bg-brand-dark text-white flex items-center justify-center text-sm leading-none">+</button>
+          <span class="text-gray-400 w-10 truncate">${_escapeHtml(p.unit)}</span>
+        </div>
+      </div>`);
+  }
+
+  countEl.textContent = count === 1 ? '1 item' : `${count} items`;
+
+  if (count === 0) {
+    // Nothing entered yet — hide both the chip and the panel.
+    toggle.classList.add('hidden');
+    panel.classList.add('hidden');
+    list.innerHTML = '';
+    _previewOpen = false;
+    return;
+  }
+
+  toggle.classList.remove('hidden');
+  list.innerHTML = rows.join('');
+  // Keep the panel's open/closed state in sync with the chip.
+  panel.classList.toggle('hidden', !_previewOpen);
+}
+
+function togglePreview() {
+  _previewOpen = !_previewOpen;
+  document.getElementById('order-preview').classList.toggle('hidden', !_previewOpen);
+  const chev = document.getElementById('preview-chevron');
+  if (chev) chev.style.transform = _previewOpen ? 'rotate(180deg)' : '';
+}
+
+// Jump to a product's row from the preview and briefly highlight it.
+function scrollToProduct(id) {
+  const el = (currentMode === 'comprehensive')
+    ? document.getElementById(`qty-detail-${id}`)
+    : document.getElementById(`qty-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add('ring-2', 'ring-brand');
+  setTimeout(() => el.classList.remove('ring-2', 'ring-brand'), 1200);
+}
+
+// Remove a line straight from the preview by zeroing its quantity.
+function removeFromOrder(id) {
+  const simple = document.getElementById(`qty-${id}`);
+  const detail = document.getElementById(`qty-detail-${id}`);
+  if (simple) simple.value = 0;
+  if (detail) detail.value = 0;
+  onQtyInput(id);   // syncs both views, hides price row, updates total + preview
+}
+
+// Editing the qty field in the preview → push it to the real product rows so
+// both views (and the total) stay in sync, then re-render the preview.
+function onPreviewQty(id) {
+  const v = parseInt(document.getElementById(`pv-qty-${id}`).value) || 0;
+  const simple = document.getElementById(`qty-${id}`);
+  const detail = document.getElementById(`qty-detail-${id}`);
+  if (simple) simple.value = v;
+  if (detail) detail.value = v;
+  onQtyInput(id);   // syncs views + price row, updates total + preview
+}
+
+// Editing the price field in the preview → mirror it to both product rows.
+function onPreviewPrice(id) {
+  const v = document.getElementById(`pv-price-${id}`).value;
+  const simple = document.getElementById(`simple-price-${id}`);
+  const detail = document.getElementById(`price-${id}`);
+  if (simple) simple.value = v;
+  if (detail) detail.value = v;
+  checkPriceRange(id);
+  updateTotal();    // recomputes total + re-renders preview
 }
 
 // ── Submit ─────────────────────────────────────────────────────────────────
