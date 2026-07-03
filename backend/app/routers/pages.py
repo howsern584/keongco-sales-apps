@@ -560,8 +560,8 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
     ]
 
     # Customers + Users tabs need the salesperson list + groups (server-side rendered).
-    # The heavy All Orders and Prices tabs are loaded lazily (see /admin/tab/orders
-    # and /admin/tab/prices) so the initial admin DOM stays light.
+    # The heavy Prices and Allocations tabs are loaded lazily (see /admin/tab/prices
+    # and /admin/tab/allocations) so the initial admin DOM stays light.
     salesperson_users = db.query(models.User).filter(
         models.User.role == models.UserRole.salesperson,
         models.User.is_active.is_(True),
@@ -585,21 +585,6 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
 
 
 # ---------- Admin lazy-data endpoints ----------------------------------------
-
-@router.get("/admin/tab/orders", response_class=HTMLResponse)
-def admin_tab_orders(request: Request, db: Session = Depends(get_db)):
-    """All Orders tab HTML fragment — fetched lazily on first tab click.
-    Capped at the 300 most-recent orders so the page stays light."""
-    user, redirect = login_required(request, db)
-    if redirect:
-        return redirect
-    if user.role != models.UserRole.admin:
-        return HTMLResponse("", status_code=403)
-
-    return HTMLResponse(_env.get_template("admin_orders_tab.html").render(
-        all_orders=orders_summary_query(db, limit=200),
-    ))
-
 
 @router.get("/admin/tab/prices", response_class=HTMLResponse)
 def admin_tab_prices(request: Request, db: Session = Depends(get_db)):

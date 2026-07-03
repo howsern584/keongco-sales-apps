@@ -275,7 +275,16 @@
 const ORDER_ID = {{ order.id }};
 const ADMIN_ID = {{ admin_id or 'null' }};
 
+// Guard against "tap-through": when the previous screen (e.g. the New Order page)
+// navigates here by tapping a button, the browser can deliver that stray tap to
+// whichever button now sits under the finger — which was reopening a just-submitted
+// order back to draft. Ignore action-button clicks fired in the first moments after
+// this page loads; a real user needs longer than this to read the page and tap.
+const _pageReadyAt = Date.now();
+function _tapThrough() { return Date.now() - _pageReadyAt < 700; }
+
 async function reorderThis() {
+  if (_tapThrough()) return;
   if (!confirm('Create a new draft order with the same items? You can edit quantities before submitting.')) return;
   const r = await fetch(`/orders/${ORDER_ID}/duplicate`, { method: 'POST' });
   if (r.ok) {
@@ -287,6 +296,7 @@ async function reorderThis() {
 }
 
 async function editOrder() {
+  if (_tapThrough()) return;
   // Reopen to draft (returns reserved stock if it was submitted), then edit.
   const r = await fetch(`/orders/${ORDER_ID}/reopen`, { method: 'POST' });
   if (r.ok) {
@@ -297,6 +307,7 @@ async function editOrder() {
 }
 
 async function deleteDraft() {
+  if (_tapThrough()) return;
   if (!confirm('Delete this draft order? This cannot be undone.')) return;
   const r = await fetch(`/orders/${ORDER_ID}`, { method: 'DELETE' });
   if (r.ok) {
@@ -307,6 +318,7 @@ async function deleteDraft() {
 }
 
 async function approveOrder() {
+  if (_tapThrough()) return;
   if (!confirm(t('confirm_approve'))) return;
   const r = await fetch(`/admin/orders/${ORDER_ID}/approve?admin_id=${ADMIN_ID}`, {method:'POST'});
   if (r.ok) location.reload(); else alert((await r.json()).detail);
@@ -322,6 +334,7 @@ async function rejectOrder() {
   if (r.ok) location.reload(); else alert((await r.json()).detail);
 }
 async function pushToSage() {
+  if (_tapThrough()) return;
   if (!confirm(t('confirm_push'))) return;
   const r = await fetch(`/admin/orders/${ORDER_ID}/push-to-sage?admin_id=${ADMIN_ID}`, {method:'POST'});
   if (r.ok) location.reload(); else alert((await r.json()).detail);

@@ -14,10 +14,6 @@
     <span class="ml-1 bg-brand text-white text-xs rounded-full px-1.5 py-0.5">{{ pending_orders | length }}</span>
     {% endif %}
   </button>
-  <button onclick="showTab('all')" id="tab-all"
-          class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
-    All Orders
-  </button>
   <button onclick="showTab('allocations')" id="tab-allocations"
           class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
     Allocations
@@ -75,12 +71,6 @@
     <p class="text-sm">No pending orders — all clear!</p>
   </div>
   {% endif %}
-</div>
-
-<!-- ── All orders (lazy-loaded) ── -->
-<div id="pane-all" class="hidden">
-  <div id="orders-tab-loading" class="py-16 text-center text-gray-400 text-sm">Loading orders…</div>
-  <div id="orders-tab-content" class="hidden space-y-3"><!-- injected by loadOrders() --></div>
 </div>
 
 <!-- ── Allocations tab ── -->
@@ -528,7 +518,7 @@ function clearPoolUI(productId) {
 }
 
 function showTab(name) {
-  ['pending','all','allocations','prices','reports','customers','users','alerts'].forEach(t => {
+  ['pending','allocations','prices','reports','customers','users','alerts'].forEach(t => {
     const pane = document.getElementById(`pane-${t}`);
     const tab  = document.getElementById(`tab-${t}`);
     if (!pane || !tab) return;
@@ -544,26 +534,11 @@ function showTab(name) {
   });
   history.replaceState(null, '', '#' + name);
   // Lazy-load tabs that are heavy to render — keeps the initial admin DOM light
-  if (name === 'all')         loadOrders();
   if (name === 'allocations') loadAllocations();
   if (name === 'prices')      loadPrices();
   if (name === 'reports')  loadReports();
   if (name === 'customers' && _allCustomers.length === 0) loadCustomers();
   if (name === 'users' && !_usersLoaded) { _usersLoaded = true; loadUsers(); }
-}
-
-// ── All Orders tab (lazy) ─────────────────────────────────────────────────────
-let _ordersLoaded = false;
-async function loadOrders() {
-  if (_ordersLoaded) return;
-  const r = await fetch('/admin/tab/orders');
-  if (!r.ok) return;
-  const html = await r.text();
-  _ordersLoaded = true;
-  document.getElementById('orders-tab-loading').classList.add('hidden');
-  const content = document.getElementById('orders-tab-content');
-  content.innerHTML = html;
-  content.classList.remove('hidden');
 }
 
 // ── Prices tab (lazy) ─────────────────────────────────────────────────────────
@@ -653,7 +628,7 @@ async function loadReports() {
 // On load, restore the tab from the URL hash
 (function() {
   const hash = window.location.hash.replace('#','');
-  const valid = ['pending','all','allocations','prices','reports','customers','users','alerts'];
+  const valid = ['pending','allocations','prices','reports','customers','users','alerts'];
   showTab(valid.includes(hash) ? hash : 'pending');
 })();
 

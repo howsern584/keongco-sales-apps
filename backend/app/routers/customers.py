@@ -251,6 +251,40 @@ def get_customer(customer_id: int, request: Request, db: Session = Depends(get_d
     return cust
 
 
+@router.get("/{customer_id}/last-transport")
+def get_last_transport(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    """Return the transport used on this customer's most recent real order, so the
+    new-order screen can default the Transport field to "same as last time".
+
+    Looks only at submitted/approved/pushed orders (not drafts) and ignores rows
+    with no transport recorded. Returns {"transport": "<name>"} or
+    {"transport": null} when the customer has no prior transport on record.
+    """
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    cust = db.query(models.Customer).get(customer_id)
+    if cust is None:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+
+    last = (
+        db.query(models.Order)
+        .filter(
+            models.Order.customer_id == customer_id,
+            models.Order.status.in_([
+                models.OrderStatus.submitted,
+                models.OrderStatus.approved,
+                models.OrderStatus.pushed_to_sage,
+            ]),
+            models.Order.transport.isnot(None),
+            models.Order.transport != "",
+        )
+        .order_by(models.Order.created_at.desc())
+        .first()
+    )
+    return {"transport": last.transport if last else None}
+
+
 # ---------- Customer-specific prices -----------------------------------------
 
 @router.get("/{customer_id}/prices")
