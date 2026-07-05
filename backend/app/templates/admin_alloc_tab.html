@@ -27,9 +27,57 @@
             class="w-full border-2 border-indigo-400 text-indigo-700 font-semibold py-2.5 rounded-xl hover:bg-indigo-100 transition mt-3 mb-2 text-sm">
       Auto-Calculate from Sales History
     </button>
-    <p class="text-xs text-indigo-400 text-center mb-3">
-      Formula: 85% of stock × share% (8-week avg), rounded up to nearest 10. Cap: 4,000/week per item.
-    </p>
+
+    <!-- Auto-Calculate rules — plain-language summary + editable numbers so the
+         rules stay visible and admins can tune them without touching code. -->
+    <div class="bg-white border border-indigo-200 rounded-lg p-3 mb-3 text-xs">
+      <div class="font-semibold text-indigo-800 mb-1.5">Auto-Calculate Rules</div>
+      <p class="text-gray-600 leading-relaxed mb-2.5">
+        Each rep's weekly preset for a product =
+        <b class="text-indigo-700">{{ schedule.stock_buffer_pct }}%</b> of that product's stock ×
+        the rep's share of team sales over the last
+        <b class="text-indigo-700">{{ schedule.sales_weeks }}</b> weeks,
+        rounded up to the nearest <b class="text-indigo-700">{{ schedule.round_step }}</b>,
+        and capped at <b class="text-indigo-700">{{ schedule.max_qty_per_person }}</b> per rep.
+        Products with less than
+        <b class="text-indigo-700">{{ "%.1f"|format(schedule.min_alloc_mt) }} MT</b>
+        of stock are <b>not</b> auto-allocated to anyone.
+      </p>
+
+      <div class="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        <label class="flex items-center justify-between gap-1">
+          <span class="text-gray-600">Stock used (%)</span>
+          <input id="ac-buffer" type="number" min="1" max="100" value="{{ schedule.stock_buffer_pct }}"
+                 class="w-16 border border-indigo-300 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-400"/>
+        </label>
+        <label class="flex items-center justify-between gap-1">
+          <span class="text-gray-600">Sales weeks</span>
+          <input id="ac-weeks" type="number" min="1" max="52" value="{{ schedule.sales_weeks }}"
+                 class="w-16 border border-indigo-300 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-400"/>
+        </label>
+        <label class="flex items-center justify-between gap-1">
+          <span class="text-gray-600">Round up to</span>
+          <input id="ac-round" type="number" min="1" max="10000" value="{{ schedule.round_step }}"
+                 class="w-16 border border-indigo-300 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-400"/>
+        </label>
+        <label class="flex items-center justify-between gap-1">
+          <span class="text-gray-600">Cap per rep</span>
+          <input id="ac-cap" type="number" min="1" value="{{ schedule.max_qty_per_person }}"
+                 class="w-16 border border-indigo-300 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-400"/>
+        </label>
+        <label class="flex items-center justify-between gap-1 col-span-2">
+          <span class="text-gray-600">Skip products below (MT of stock)</span>
+          <input id="ac-minmt" type="number" min="0" step="0.1" value="{{ "%.1f"|format(schedule.min_alloc_mt) }}"
+                 class="w-16 border border-indigo-300 rounded px-1.5 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-400"/>
+        </label>
+      </div>
+
+      <button onclick="saveAutoCalcSettings()"
+              class="w-full mt-2.5 border border-indigo-300 text-indigo-700 font-medium py-1.5 rounded-lg hover:bg-indigo-100 transition">
+        Save Rules
+      </button>
+      <p id="ac-msg" class="hidden text-center mt-1.5 font-medium"></p>
+    </div>
     <button onclick="applyAllPresets()"
             class="w-full bg-indigo-600 text-white font-semibold py-3 rounded-xl hover:bg-indigo-700 transition mb-2 text-sm">
       Apply All Presets Now
@@ -175,26 +223,6 @@
     </div>
   </div>
   <div id="alloc-detail-{{ p.id }}" class="hidden border-t border-gray-100">
-    {% if all_groups %}
-    <div class="px-2 py-1 bg-indigo-50 border-b border-indigo-100">
-      <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Group Presets</span>
-    </div>
-    {% for g in all_groups %}
-    {% set gmembers = group_members.get(g.id, []) %}
-    {% set gpreset = preset_map.get((p.id, 'group', g.id), 0) %}
-    <div class="flex items-center gap-1.5 px-2 py-1 border-b border-gray-50">
-      <span class="text-xs font-medium text-indigo-700 w-20 shrink-0 truncate">{{ g.name }}</span>
-      <span class="text-xs text-gray-400 shrink-0">{{ gmembers | length }} members</span>
-      <div class="flex-1"></div>
-      <span class="text-xs text-amber-600 shrink-0">Preset/wk:</span>
-      <input type="number" min="0" placeholder="0" id="gpreset-{{ p.id }}-{{ g.id }}"
-             value="{{ gpreset if gpreset else '' }}"
-             class="w-14 border border-amber-300 rounded px-1 py-0 text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-400"/>
-      <button onclick="savePreset({{ p.id }}, null, {{ g.id }})"
-              class="text-xs font-semibold px-1.5 py-0 bg-amber-500 text-white rounded shrink-0">Set</button>
-    </div>
-    {% endfor %}
-    {% endif %}
     <div class="px-2 py-1 bg-gray-50 border-b border-gray-100">
       <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Individual Allocation &amp; Preset</span>
     </div>
@@ -202,7 +230,7 @@
     {% set alloc   = alloc_map.get((sp.id, p.id)) %}
     {% set upreset = preset_map.get((p.id, 'user', sp.id), 0) %}
     <div class="flex items-center gap-1 px-2 py-0.5 {% if not loop.first %}border-t border-gray-50{% endif %}">
-      <span class="text-xs text-gray-600 w-16 shrink-0 truncate">{{ sp.name.split(' ')[0] }}{% if sp.group %}<span class="text-gray-300 text-[10px]"> ({{ sp.group.name }})</span>{% endif %}</span>
+      <span class="text-xs text-gray-600 w-16 shrink-0 truncate">{{ sp.name.split(' ')[0] }}</span>
       {% if alloc and alloc.allocated_qty > 0 %}
       {% set pct = (alloc.remaining_qty / alloc.allocated_qty * 100) | int %}
       <div class="flex-1 bg-gray-100 rounded-full h-2 min-w-0">
@@ -224,7 +252,7 @@
       <input type="number" min="0" placeholder="0" id="upreset-{{ p.id }}-{{ sp.id }}"
              value="{{ upreset if upreset else '' }}"
              class="w-11 border border-amber-300 rounded px-1 py-0 text-xs text-center focus:outline-none focus:ring-1 focus:ring-amber-400"/>
-      <button onclick="savePreset({{ p.id }}, {{ sp.id }}, null)"
+      <button onclick="savePreset({{ p.id }}, {{ sp.id }})"
               class="text-xs font-semibold px-1 py-0 bg-amber-500 text-white rounded shrink-0">Set</button>
     </div>
     {% endfor %}

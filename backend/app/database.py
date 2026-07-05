@@ -56,8 +56,22 @@ _ADDED_COLUMNS = [
     ("orders",           "customer_po",      "VARCHAR(60)"),
     # Price-change notifications: when this user last viewed the Price Updates list
     ("users",            "prices_seen_at",   "DATETIME"),
+    # Editable Auto-Calculate formula settings. Defaults match the values that were
+    # hard-coded before, so existing installs keep the exact same behaviour.
+    ("allocation_settings", "sales_weeks",        "INTEGER NOT NULL DEFAULT 8"),
+    ("allocation_settings", "stock_buffer_pct",   "INTEGER NOT NULL DEFAULT 85"),
+    ("allocation_settings", "max_qty_per_person", "INTEGER NOT NULL DEFAULT 4000"),
+    ("allocation_settings", "round_step",         "INTEGER NOT NULL DEFAULT 10"),
+    ("allocation_settings", "min_alloc_mt",       "REAL NOT NULL DEFAULT 1.0"),
 ]
 # New TABLES (customer_prices, price_change_events) are created by create_all().
+
+# The Salesperson Groups feature was removed. Its leftover schema — the
+# `user_groups` table and the `group_id` foreign-key columns on `users` and
+# `product_presets` — is left dormant on purpose: SQLite cannot DROP a foreign-key
+# column without rebuilding the whole table (and `users` is referenced everywhere),
+# which is a data-integrity risk for zero functional gain. The columns are empty,
+# unmapped by the ORM, and invisible to the app.
 
 
 def run_lightweight_migrations():

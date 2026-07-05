@@ -24,9 +24,8 @@ from .. import models, schemas
 
 router = APIRouter(prefix="/admin", tags=["admin: stock control"])
 
-# Products with less than this much stock (in metric tons) are NOT auto-allocated
-# to anyone — too little to bother dividing up. Admin can still set them manually.
-MIN_AUTO_ALLOC_MT = 1.0
+# The minimum-stock floor for auto-allocation (in metric tons) is now an editable
+# admin setting — see AllocationSettings.min_alloc_mt.
 
 
 def _stock_mt(product, units: int) -> float | None:
@@ -308,52 +307,34 @@ def delete_allocation(allocation_id: int, db: Session = Depends(get_db)):
 
 class PresetPayload(BaseModel):
     weekly_qty: int = Field(..., ge=0)
-    user_id:    Optional[int] = None   # set for individual salesperson
-    group_id:   Optional[int] = None   # set for group (mutually exclusive with user_id)
+    user_id:    int                    # the salesperson this preset is for
 
 @router.post("/products/{product_id}/preset")
 def set_product_preset(product_id: int, payload: PresetPayload, db: Session = Depends(get_db)):
-    """Set (or zero) the weekly preset qty for a product+user or product+group."""
-    if not payload.user_id and not payload.group_id:
-        raise HTTPException(status_code=400, detail="Provide either user_id or group_id.")
-    if payload.user_id and payload.group_id:
-        raise HTTPException(status_code=400, detail="Provide user_id OR group_id, not both.")
-
-    q = db.query(models.ProductPreset).filter(
-        models.ProductPreset.product_id == product_id
-    )
-    if payload.user_id:
-        q = q.filter(models.ProductPreset.user_id == payload.user_id,
-                     models.ProductPreset.group_id.is_(None))
-    else:
-        q = q.filter(models.ProductPreset.group_id == payload.group_id,
-                     models.ProductPreset.user_id.is_(None))
-
-    preset = q.first()
+    """Set (or zero) the weekly preset qty for a product + salesperson."""
+    preset = db.query(models.ProductPreset).filter(
+        models.ProductPreset.product_id == product_id,
+        models.ProductPreset.user_id == payload.user_id,
+    ).first()
     if preset:
         preset.weekly_qty = payload.weekly_qty
     else:
-        preset = models.ProductPreset(
+        db.add(models.ProductPreset(
             product_id=product_id,
             user_id=payload.user_id,
-            group_id=payload.group_id,
             weekly_qty=payload.weekly_qty,
-        )
-        db.add(preset)
+        ))
     db.commit()
     return {"ok": True}
 
 
 @router.get("/products/{product_id}/presets")
 def get_product_presets(product_id: int, db: Session = Depends(get_db)):
-    """Return all presets for a product (keyed by user_id and group_id)."""
+    """Return all presets for a product, keyed by user_id."""
     rows = db.query(models.ProductPreset).filter(
         models.ProductPreset.product_id == product_id
     ).all()
-    return [
-        {"user_id": r.user_id, "group_id": r.group_id, "weekly_qty": r.weekly_qty}
-        for r in rows
-    ]
+    return [{"user_id": r.user_id, "weekly_qty": r.weekly_qty} for r in rows]
 
 
 class ResetAllPayload(BaseModel):
@@ -453,17 +434,21 @@ def auto_calculate_presets(db: Session = Depends(get_db)):
     """
     Performance Share formula (proportional allocation):
       For each product × salesperson:
-        share%       = rep's 8-week sales / team's 8-week sales for that product
-        preset_qty   = ceil_to_10(0.85 × total_stock_on_hand × share%)
-        cap          = 4 000 bags/week per person per product
+        share%       = rep's sales / team's sales for that product (over sales_weeks)
+        preset_qty   = round_up_to(round_step, buffer% × total_stock_on_hand × share%)
+        cap          = max_qty_per_person bags/week per person per product
 
-    85% of stock is used (not 100%) to keep a buffer.
-    Result is always rounded UP to the nearest 10.
-    Only salespeople who have sold the product in the last 8 weeks get a preset.
-    Existing presets for salespeople with no recent sales are left unchanged.
+    All the numbers (sales_weeks, stock_buffer_pct, max_qty_per_person, round_step,
+    min_alloc_mt) are editable by the admin — see AllocationSettings. Buffer < 100%
+    keeps a safety margin. Only salespeople who sold the product within the lookback
+    window get a preset; others' existing presets are left unchanged.
     """
-    WEEKS_LOOKBACK = 8
-    MAX_QTY = 4000
+    s = _get_or_create_settings(db)
+    WEEKS_LOOKBACK = s.sales_weeks
+    MAX_QTY        = s.max_qty_per_person
+    buffer_frac    = s.stock_buffer_pct / 100.0
+    round_step     = max(1, s.round_step)          # guard against divide-by-zero
+    min_alloc_mt   = s.min_alloc_mt
     cutoff = datetime.utcnow() - timedelta(weeks=WEEKS_LOOKBACK)
 
     salespeople = db.query(models.User).filter(
@@ -519,9 +504,9 @@ def auto_calculate_presets(db: Session = Depends(get_db)):
         total_stock = stock_map.get(product.id, 0)
         if total_stock == 0:
             continue
-        # Skip products with under 1 MT of stock — too little to auto-allocate.
+        # Skip products with too little stock (in MT) to bother auto-allocating.
         smt = _stock_mt(product, total_stock)
-        if smt is not None and smt < MIN_AUTO_ALLOC_MT:
+        if smt is not None and smt < min_alloc_mt:
             continue
         sp_sales = sales_by_product.get(product.id, {})
         team_total = sum(sp_sales.values())
@@ -534,8 +519,9 @@ def auto_calculate_presets(db: Session = Depends(get_db)):
             if rep_qty == 0:
                 continue
             share = rep_qty / team_total
-            raw = 0.85 * total_stock * share
-            preset_qty = min(math.ceil(raw / 10) * 10, MAX_QTY)  # 85% stock, round up to 10, cap
+            raw = buffer_frac * total_stock * share
+            # buffer% of stock, rounded up to nearest round_step, capped per person.
+            preset_qty = min(math.ceil(raw / round_step) * round_step, MAX_QTY)
             if preset_qty == 0:
                 continue
 
@@ -587,36 +573,58 @@ def set_allocation_schedule(payload: SchedulePayload, db: Session = Depends(get_
     return {"ok": True}
 
 
+class AutoCalcSettingsPayload(BaseModel):
+    sales_weeks:        int
+    stock_buffer_pct:   int
+    max_qty_per_person: int
+    round_step:         int
+    min_alloc_mt:       float
+
+
+@router.post("/auto-calc-settings")
+def set_auto_calc_settings(payload: AutoCalcSettingsPayload, db: Session = Depends(get_db)):
+    """Save the editable Auto-Calculate formula numbers (the Allocation tab is admin-only).
+    Ranges are validated so a typo can't break the formula (e.g. a 0 divisor)."""
+    if not (1 <= payload.sales_weeks <= 52):
+        raise HTTPException(400, "Sales weeks must be between 1 and 52.")
+    if not (1 <= payload.stock_buffer_pct <= 100):
+        raise HTTPException(400, "Stock buffer % must be between 1 and 100.")
+    if not (1 <= payload.max_qty_per_person <= 1_000_000):
+        raise HTTPException(400, "Max qty per person must be at least 1.")
+    if not (1 <= payload.round_step <= 10_000):
+        raise HTTPException(400, "Round-up step must be at least 1.")
+    if not (0 <= payload.min_alloc_mt <= 10_000):
+        raise HTTPException(400, "Minimum stock (MT) must be 0 or more.")
+
+    s = _get_or_create_settings(db)
+    s.sales_weeks        = payload.sales_weeks
+    s.stock_buffer_pct   = payload.stock_buffer_pct
+    s.max_qty_per_person = payload.max_qty_per_person
+    s.round_step         = payload.round_step
+    s.min_alloc_mt       = payload.min_alloc_mt
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/apply-presets")
 def apply_presets(db: Session = Depends(get_db)):
     """
-    Apply ALL stored presets to allocations in one shot.
-
-    For each product:
-      - Group presets: divide weekly_qty equally among active group members.
-      - Individual presets: set that salesperson's allocation directly.
-    Salespeople with no preset for a product are left untouched.
-    Updates AllocationSettings.last_run_at when done.
+    Apply ALL stored presets to allocations in one shot: each preset sets that
+    salesperson's allocation for the product directly. Salespeople with no preset
+    for a product are left untouched. Updates AllocationSettings.last_run_at when done.
     """
     preset_rows = db.query(models.ProductPreset).all()
     if not preset_rows:
         return {"ok": True, "products_touched": 0, "allocations_set": 0,
                 "message": "No presets are defined yet."}
 
-    # Build a fast lookup of group_id → active member user ids
-    all_sps = db.query(models.User).filter(
-        models.User.role == models.UserRole.salesperson,
-        models.User.is_active.is_(True),
-    ).all()
-    group_members: dict[int, list] = {}
-    for sp in all_sps:
-        if sp.group_id:
-            group_members.setdefault(sp.group_id, []).append(sp)
-
     # Build a product lookup
     products = {p.id: p for p in db.query(models.Product).all()}
 
-    # Stock-on-hand (units) per product, to skip sub-1-MT products.
+    # Minimum stock (MT) below which a product is never auto-allocated (admin-set).
+    min_alloc_mt = _get_or_create_settings(db).min_alloc_mt
+
+    # Stock-on-hand (units) per product, to skip low-stock products.
     stock_units = dict(
         db.query(models.Lot.product_id, _func.sum(models.Lot.qty_on_hand))
         .group_by(models.Lot.product_id)
@@ -653,33 +661,22 @@ def apply_presets(db: Session = Depends(get_db)):
         product = products.get(preset.product_id)
         if product is None:
             continue
-        # Skip products with under 1 MT of stock — too little to auto-allocate.
+        # Skip products with too little stock (in MT) to auto-allocate.
         smt = _stock_mt(product, stock_units.get(preset.product_id, 0) or 0)
-        if smt is not None and smt < MIN_AUTO_ALLOC_MT:
+        if smt is not None and smt < min_alloc_mt:
             skipped_low_stock += 1
             continue
         products_touched.add(preset.product_id)
+        _upsert_alloc(preset.user_id, preset.product_id, preset.weekly_qty, product)
+        allocations_set += 1
 
-        if preset.group_id:
-            members = group_members.get(preset.group_id, [])
-            if not members:
-                continue
-            share = max(1, preset.weekly_qty // len(members))
-            for sp in members:
-                _upsert_alloc(sp.id, preset.product_id, share, product)
-                allocations_set += 1
-
-        elif preset.user_id:
-            _upsert_alloc(preset.user_id, preset.product_id, preset.weekly_qty, product)
-            allocations_set += 1
-
-    # Actively un-allocate every product under 1 MT of stock — this also clears
+    # Actively un-allocate every product below the min-MT floor — this also clears
     # allocations left over from before the stock dropped (or from an older run
-    # made before this floor existed), so nobody holds sub-1-MT stock.
+    # made before this floor existed), so nobody holds below-floor stock.
     low_pids = []
     for pid, prod in products.items():
         smt = _stock_mt(prod, stock_units.get(pid, 0) or 0)
-        if smt is not None and smt < MIN_AUTO_ALLOC_MT:   # None = unknown weight, leave alone
+        if smt is not None and smt < min_alloc_mt:   # None = unknown weight, leave alone
             low_pids.append(pid)
     cleared_low_stock = 0
     if low_pids:

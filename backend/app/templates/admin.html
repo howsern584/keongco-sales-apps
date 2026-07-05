@@ -312,43 +312,6 @@
     </div>
   </div>
 
-  <!-- Groups -->
-  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="font-semibold text-gray-800 text-sm">Salesperson Groups</h3>
-      <div class="flex gap-2">
-        <input id="new-group-name" type="text" placeholder="Group name"
-               class="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand w-32"/>
-        <button onclick="createGroup()"
-                class="text-xs font-semibold px-2 py-1 bg-brand text-white rounded-lg">+ Add</button>
-      </div>
-    </div>
-    <div id="group-list" class="space-y-2">
-      {% if all_groups %}
-        {% for g in all_groups %}
-        <div class="border border-gray-100 rounded-lg px-3 py-2" id="group-row-{{ g.id }}">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-sm font-medium text-gray-700">{{ g.name }}</span>
-            <button onclick="deleteGroup({{ g.id }}, '{{ g.name }}')"
-                    class="text-xs text-red-400 hover:text-red-600">Delete</button>
-          </div>
-          <div class="flex flex-wrap gap-1">
-            {% set members = group_members.get(g.id, []) %}
-            {% for m in members %}
-            <span class="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{{ m.name.split(' ')[0] }}</span>
-            {% else %}
-            <span class="text-xs text-gray-400 italic">No members yet</span>
-            {% endfor %}
-          </div>
-        </div>
-        {% endfor %}
-      {% else %}
-        <p class="text-xs text-gray-400 text-center py-2">No groups yet. Add one above.</p>
-      {% endif %}
-    </div>
-    <p class="text-xs text-gray-400 mt-2">Assign users to groups in the user list below. Each user can only be in one group.</p>
-  </div>
-
   <!-- User list -->
   <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100">
     <div class="px-4 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">
@@ -900,17 +863,13 @@ async function resetAllAlloc(productId, productName) {
   }
 }
 
-async function savePreset(productId, userId, groupId) {
-  const inputId = userId ? `upreset-${productId}-${userId}` : `gpreset-${productId}-${groupId}`;
-  const input = document.getElementById(inputId);
+async function savePreset(productId, userId) {
+  const input = document.getElementById(`upreset-${productId}-${userId}`);
   const qty = input && input.value.trim() ? parseInt(input.value) : 0;
-  const body = { weekly_qty: qty };
-  if (userId)  body.user_id  = userId;
-  if (groupId) body.group_id = groupId;
   const r = await fetch(`/admin/products/${productId}/preset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ weekly_qty: qty, user_id: userId }),
   });
   if (r.ok) { showAllocMsg(`✓ Preset saved: ${qty}/wk`, true); }
   else { const e = await r.json(); showAllocMsg(e.detail || 'Failed to save preset.', false); }
@@ -945,7 +904,7 @@ async function applyAllPresets() {
 }
 
 async function autoCalculatePresets() {
-  if (!confirm('Auto-calculate presets from last 4 weeks of sales?\n\nEach salesperson\'s preset will be set to their proportional share of current stock (capped at 4,000 bags/week per item). Salespeople with no recent sales are left unchanged.')) return;
+  if (!confirm('Auto-calculate presets using the rules shown above?\n\nEach salesperson\'s preset is set to their proportional share of current stock, per the saved formula numbers. Salespeople with no recent sales are left unchanged.')) return;
   const btn = document.getElementById('auto-calc-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Calculating…'; }
   const r = await fetch('/admin/auto-calculate-presets', { method: 'POST' });
@@ -983,48 +942,46 @@ async function savePresetSchedule() {
   }
 }
 
+// Save the editable Auto-Calculate formula numbers, then reload the tab so the
+// plain-language rules summary re-renders with the new values.
+async function saveAutoCalcSettings() {
+  const body = {
+    stock_buffer_pct:   parseInt(document.getElementById('ac-buffer').value),
+    sales_weeks:        parseInt(document.getElementById('ac-weeks').value),
+    round_step:         parseInt(document.getElementById('ac-round').value),
+    max_qty_per_person: parseInt(document.getElementById('ac-cap').value),
+    min_alloc_mt:       parseFloat(document.getElementById('ac-minmt').value),
+  };
+  const msgEl = document.getElementById('ac-msg');
+  const bad = Object.values(body).some(v => v === null || Number.isNaN(v));
+  if (bad) {
+    msgEl.textContent = 'Please fill in all numbers.';
+    msgEl.classList.remove('hidden', 'text-green-600'); msgEl.classList.add('text-red-600');
+    return;
+  }
+  const r = await fetch('/admin/auto-calc-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (r.ok) {
+    msgEl.textContent = '✓ Rules saved.';
+    msgEl.classList.remove('hidden', 'text-red-600'); msgEl.classList.add('text-green-600');
+    _allocLoaded = false;
+    setTimeout(loadAllocations, 600);   // re-render the rules summary with new numbers
+  } else {
+    const data = await r.json().catch(() => ({}));
+    msgEl.textContent = data.detail || 'Failed to save.';
+    msgEl.classList.remove('hidden', 'text-green-600'); msgEl.classList.add('text-red-600');
+  }
+}
+
 // Restore last-used reset qty values after page reload
 document.querySelectorAll('[id^="reset-qty-"]').forEach(input => {
   const pid = input.id.replace('reset-qty-', '');
   const saved = localStorage.getItem(`reset-qty-${pid}`);
   if (saved) input.value = saved;
 });
-
-// ── Group management ─────────────────────────────────────────────────────────
-
-async function createGroup() {
-  const input = document.getElementById('new-group-name');
-  const name = input.value.trim();
-  if (!name) { alert('Enter a group name.'); return; }
-  const r = await fetch('/admin/groups', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  if (r.ok) {
-    input.value = '';
-    location.reload();
-  } else {
-    const e = await r.json();
-    alert(e.detail || 'Failed to create group.');
-  }
-}
-
-async function deleteGroup(groupId, groupName) {
-  if (!confirm(`Delete group "${groupName}"? Members will become individual.`)) return;
-  const r = await fetch(`/admin/groups/${groupId}`, { method: 'DELETE' });
-  if (r.ok) { location.reload(); }
-  else { const e = await r.json(); alert(e.detail || 'Failed to delete group.'); }
-}
-
-async function assignGroup(userId, groupId) {
-  const r = await fetch(`/admin/groups/users/${userId}/assign`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ group_id: groupId ? parseInt(groupId) : null }),
-  });
-  if (!r.ok) { const e = await r.json(); alert(e.detail || 'Failed to assign group.'); }
-}
 
 // ── User management ───────────────────────────────────────────────────────────
 
@@ -1042,26 +999,12 @@ function roleBadgeClass(role) {
 
 async function loadUsers() {
   const body = document.getElementById('user-list-body');
-  const [usersRes, groupsRes] = await Promise.all([fetch('/admin/users'), fetch('/admin/groups')]);
+  const usersRes = await fetch('/admin/users');
   if (!usersRes.ok) { body.innerHTML = '<p class="text-sm text-red-500 px-4 py-3">Failed to load users.</p>'; return; }
-  const users  = await usersRes.json();
-  const groups = groupsRes.ok ? await groupsRes.json() : [];
+  const users = await usersRes.json();
   if (!users.length) { body.innerHTML = '<p class="text-sm text-gray-400 px-4 py-3 text-center">No users yet.</p>'; return; }
 
-  const groupOptions = [
-    '<option value="">— Individual —</option>',
-    ...groups.map(g => `<option value="${g.id}">${g.name}</option>`),
-  ].join('');
-
   body.innerHTML = users.map(u => {
-    // find which group this user belongs to
-    const userGroup = groups.find(g => g.members.some(m => m.id === u.id));
-    const groupSelectVal = userGroup ? userGroup.id : '';
-    const groupOptionsForUser = [
-      '<option value="">— Individual —</option>',
-      ...groups.map(g => `<option value="${g.id}" ${g.id === groupSelectVal ? 'selected' : ''}>${g.name}</option>`),
-    ].join('');
-
     return `
     <div class="${u.is_active ? '' : 'bg-gray-100 opacity-70'}">
       <!-- Main row -->
@@ -1072,18 +1015,8 @@ async function loadUsers() {
             <span class="text-xs px-1.5 py-0.5 rounded-full ${roleBadgeClass(u.role)}">${roleLabel(u.role)}</span>
             ${!u.is_active ? '<span class="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">Disabled</span>' : ''}
             ${!u.has_password ? '<span class="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">No PW</span>' : ''}
-            ${userGroup ? `<span class="text-xs px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">${userGroup.name}</span>` : ''}
           </div>
           <div class="text-xs text-gray-400 mt-0.5">@${u.login}</div>
-          ${(u.role === 'salesperson' || u.role === 'admin') ? `
-          <div class="flex items-center gap-1 mt-1">
-            <span class="text-xs text-gray-400 shrink-0">Group:</span>
-            <select onchange="assignGroup(${u.id}, this.value)"
-                    data-kc-native="1"
-                    class="text-xs border border-gray-200 rounded px-1 py-0 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white">
-              ${groupOptionsForUser}
-            </select>
-          </div>` : ''}
         </div>
         <div class="flex gap-1 shrink-0">
           <button onclick="toggleEditUser(${u.id})"

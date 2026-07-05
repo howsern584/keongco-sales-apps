@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% set show_nav = true %}
+{% set active = "warehouse" %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h2 class="text-xl font-bold">Shipments to Photograph</h2>
+    <p class="text-xs text-gray-500">Tap a lot to take or upload its quality photo.</p>
+  </div>
+</div>
+
+<!-- Search box (client-side filter) -->
+<div class="relative mb-4">
+  <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+       fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/>
+  </svg>
+  <input id="lot-search" type="text" placeholder="Search product or lot code…"
+         oninput="filterLots(this.value)"
+         class="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-brand bg-white">
+</div>
+
+{% if lots %}
+<div id="lot-list" class="space-y-2">
+  {% for lot in lots %}
+  <a href="/app/lots/{{ lot.id }}/photos"
+     class="lot-card block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-3 hover:shadow-md active:bg-gray-50 transition"
+     data-search="{{ lot.product_name | lower }} {{ lot.lot_code | lower }}">
+    <div class="flex items-center gap-3">
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-gray-800 truncate">{{ lot.product_name }}</div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          Lot {{ lot.lot_code }}
+          {% if lot.received_date %}<span class="text-gray-300">·</span> {{ lot.received_date }}{% endif %}
+          <span class="text-gray-300">·</span> {{ lot.qty_on_hand }} in stock
+        </div>
+      </div>
+      <div class="shrink-0">
+        {% if lot.photo_count > 0 %}
+        <span class="text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700">
+          ✓ {{ lot.photo_count }} photo{% if lot.photo_count != 1 %}s{% endif %}
+        </span>
+        {% else %}
+        <span class="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700">
+          Needs photo
+        </span>
+        {% endif %}
+      </div>
+      <svg class="w-4 h-4 text-gray-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+      </svg>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+<!-- Empty-state when a search matches nothing -->
+<div id="lot-no-results" class="hidden text-center text-gray-400 mt-16">
+  <p class="text-sm">No lots match your search.</p>
+</div>
+
+{% else %}
+<div class="text-center text-gray-400 mt-20">
+  <svg class="w-16 h-16 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+  </svg>
+  <p>No lots in stock to photograph.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Client-side filter over the lot cards (same idea as the order history search).
+function filterLots(q) {
+  const term = (q || '').toLowerCase().trim();
+  const cards = document.querySelectorAll('.lot-card');
+  let visible = 0;
+  cards.forEach(card => {
+    const match = !term || card.dataset.search.includes(term);
+    card.classList.toggle('hidden', !match);
+    if (match) visible++;
+  });
+  const noRes = document.getElementById('lot-no-results');
+  if (noRes) noRes.classList.toggle('hidden', visible !== 0 || cards.length === 0);
+}
+</script>
+{% endblock %}

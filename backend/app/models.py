@@ -61,27 +61,14 @@ class ProductUnit(str, enum.Enum):
 # Tables
 # ---------------------------------------------------------------------------
 
-class UserGroup(Base):
-    """A named group of salespersons (e.g. 'KL Team', 'Penang Team').
-    Each user belongs to at most one group; ungrouped users are treated as individuals."""
-    __tablename__ = "user_groups"
-
-    id   = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
-
-    members = relationship("User", back_populates="group")
-
-
 class ProductPreset(Base):
-    """Weekly preset allocation quantity per product, per user OR per group.
-    Exactly one of user_id / group_id must be set (not both, not neither).
-    Groups share one preset that is divided equally among active members."""
+    """Weekly preset allocation quantity for one product and one salesperson.
+    Used by the auto-calculate / apply-presets flow to seed allocations."""
     __tablename__ = "product_presets"
 
     id         = Column(Integer, primary_key=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
-    user_id    = Column(Integer, ForeignKey("users.id"),       nullable=True,  index=True)
-    group_id   = Column(Integer, ForeignKey("user_groups.id"), nullable=True,  index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"),    nullable=False, index=True)
     weekly_qty = Column(Integer, nullable=False, default=0)
 
 
@@ -96,10 +83,7 @@ class User(Base):
     password_hash = Column(String, nullable=True)         # bcrypt hash; None = no password set yet
     is_active = Column(Boolean, default=True)             # False = account disabled (can't log in)
     created_at = Column(DateTime, default=datetime.utcnow)
-    group_id = Column(Integer, ForeignKey("user_groups.id"), nullable=True)  # None = individual
     prices_seen_at = Column(DateTime, nullable=True)  # last time this user viewed the Price Updates list
-
-    group = relationship("UserGroup", back_populates="members")
 
 
 class Customer(Base):
@@ -306,8 +290,18 @@ class AllocationSettings(Base):
     __tablename__ = "allocation_settings"
 
     id                   = Column(Integer, primary_key=True)
-    weeks_lookback       = Column(Integer,  default=5,     nullable=False)  # reserved (unused)
-    low_stock_threshold  = Column(Integer,  default=15000, nullable=False)  # reserved (unused)
+    weeks_lookback       = Column(Integer,  default=5,     nullable=False)  # legacy, superseded by sales_weeks
+    low_stock_threshold  = Column(Integer,  default=15000, nullable=False)  # legacy, superseded by min_alloc_mt
+
+    # ── Auto-Calculate formula settings (editable by admin in the Allocation tab) ──
+    # Formula: preset = round_up(stock_buffer_pct% × stock × sales-share), capped at
+    # max_qty_per_person. Products with less than min_alloc_mt of stock are skipped.
+    sales_weeks          = Column(Integer, default=8,    nullable=False)  # sales lookback window (weeks)
+    stock_buffer_pct     = Column(Integer, default=85,   nullable=False)  # % of stock to allocate (buffer)
+    max_qty_per_person   = Column(Integer, default=4000, nullable=False)  # weekly cap per person per product
+    round_step           = Column(Integer, default=10,   nullable=False)  # round preset up to nearest this
+    min_alloc_mt         = Column(Float,   default=1.0,  nullable=False)  # skip products below this many MT
+
     auto_renewal_enabled = Column(Boolean,  default=False, nullable=False)  # True = a schedule is set
     last_run_at          = Column(DateTime, nullable=True)   # when "Apply All Presets" was last run
     next_run_at          = Column(DateTime, nullable=True)   # informational only (no auto-runner yet)

@@ -78,6 +78,24 @@
   <!-- Bottom nav (hidden on login page) -->
   {% if show_nav %}
   <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 z-10">
+    {% if role == 'warehouse' %}
+    <!-- Warehouse staff: just their shipment-photo screen + logout. -->
+    <a href="/app/warehouse"
+       class="flex flex-col items-center text-xs {% if active == 'warehouse' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
+      <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      <span>Shipments</span>
+    </a>
+    <a href="/app/logout"
+       class="flex flex-col items-center text-xs text-gray-500">
+      <svg class="w-6 h-6 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+      </svg>
+      <span>Log Out</span>
+    </a>
+    {% else %}
     {% if role in ('salesperson', 'admin') %}
     <a href="/app/orders/new"
        class="flex flex-col items-center text-xs {% if active == 'new_order' %}text-brand font-semibold{% else %}text-gray-500{% endif %}">
@@ -109,6 +127,7 @@
       </svg>
       <span data-i18n="nav_admin">Admin</span>
     </a>
+    {% endif %}
     {% endif %}
   </nav>
   {% endif %}

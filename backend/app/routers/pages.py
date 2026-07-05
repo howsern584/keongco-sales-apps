@@ -211,9 +211,9 @@ async def do_login(request: Request, username: str = Form(...),
             return render("login.html", error=bad_creds)
 
     # Send salespeople and admins straight to the new-order page (their main job).
-    # Warehouse staff go to the orders list (they don't create orders).
+    # Warehouse staff go to their shipment-photo screen (their only job here).
     if user.role == models.UserRole.warehouse:
-        dest = "/app/orders"
+        dest = "/app/warehouse"
     else:
         dest = "/app/orders/new"
     response = RedirectResponse(dest, status_code=302)
@@ -528,6 +528,112 @@ def lot_photos_page(lot_id: int, request: Request, db: Session = Depends(get_db)
     )
 
 
+@router.get("/app/warehouse", response_class=HTMLResponse)
+def warehouse_page(request: Request, db: Session = Depends(get_db)):
+    """Warehouse landing screen: a list of current lots (batches/shipments) to
+    photograph, each linking to the existing lot photo page. Warehouse + admin only."""
+    user, redirect = login_required(request, db)
+    if redirect:
+        return redirect
+    if user.role not in (models.UserRole.warehouse, models.UserRole.admin):
+        return RedirectResponse("/app/orders", status_code=302)
+
+    # Lots with stock on hand, newest received first.
+    lots = (
+        db.query(models.Lot)
+        .filter(models.Lot.qty_on_hand > 0)
+        .order_by(models.Lot.received_date.desc())
+        .all()
+    )
+
+    # Product names for those lots, in one query (no N+1).
+    prod_ids = {l.product_id for l in lots}
+    prod_names = dict(
+        db.query(models.Product.id, models.Product.description)
+        .filter(models.Product.id.in_(prod_ids))
+        .all()
+    ) if prod_ids else {}
+
+    # How many photos each lot already has, in one grouped query.
+    photo_counts = dict(
+        db.query(models.LotPhoto.lot_id, _func2.count(models.LotPhoto.id))
+        .filter(models.LotPhoto.lot_id.in_([l.id for l in lots]))
+        .group_by(models.LotPhoto.lot_id)
+        .all()
+    ) if lots else {}
+
+    lot_rows = [
+        {
+            "id": l.id,
+            "lot_code": l.lot_code,
+            "product_name": prod_names.get(l.product_id, "--"),
+            "received_date": str(l.received_date)[:10] if l.received_date else "",
+            "qty_on_hand": l.qty_on_hand,
+            "photo_count": photo_counts.get(l.id, 0),
+        }
+        for l in lots
+    ]
+
+    return render("warehouse.html",
+        lots=lot_rows,
+        role=user.role.value,
+        user=user,
+    )
+
+
+@router.get("/app/warehouse", response_class=HTMLResponse)
+def warehouse_page(request: Request, db: Session = Depends(get_db)):
+    """Warehouse landing screen: a list of current lots (batches/shipments) to
+    photograph, each linking to the existing lot photo page. Warehouse + admin only."""
+    user, redirect = login_required(request, db)
+    if redirect:
+        return redirect
+    if user.role not in (models.UserRole.warehouse, models.UserRole.admin):
+        return RedirectResponse("/app/orders", status_code=302)
+
+    # Lots with stock on hand, newest received first.
+    lots = (
+        db.query(models.Lot)
+        .filter(models.Lot.qty_on_hand > 0)
+        .order_by(models.Lot.received_date.desc())
+        .all()
+    )
+
+    # Product names for the lots, in one query (no N+1).
+    prod_ids = {l.product_id for l in lots}
+    prod_names = dict(
+        db.query(models.Product.id, models.Product.description)
+        .filter(models.Product.id.in_(prod_ids))
+        .all()
+    ) if prod_ids else {}
+
+    # How many photos each lot already has, in one grouped query.
+    photo_counts = dict(
+        db.query(models.LotPhoto.lot_id, _func2.count(models.LotPhoto.id))
+        .filter(models.LotPhoto.lot_id.in_([l.id for l in lots]))
+        .group_by(models.LotPhoto.lot_id)
+        .all()
+    ) if lots else {}
+
+    lot_rows = [
+        {
+            "id": l.id,
+            "lot_code": l.lot_code,
+            "product_name": prod_names.get(l.product_id, "--"),
+            "received_date": str(l.received_date)[:10] if l.received_date else "",
+            "qty_on_hand": l.qty_on_hand,
+            "photo_count": photo_counts.get(l.id, 0),
+        }
+        for l in lots
+    ]
+
+    return render("warehouse.html",
+        lots=lot_rows,
+        role=user.role.value,
+        user=user,
+    )
+
+
 # ---------- Admin dashboard --------------------------------------------------
 
 @router.get("/app/admin", response_class=HTMLResponse)
@@ -559,26 +665,18 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
         for a, sp, pr in alerts_raw
     ]
 
-    # Customers + Users tabs need the salesperson list + groups (server-side rendered).
-    # The heavy Prices and Allocations tabs are loaded lazily (see /admin/tab/prices
-    # and /admin/tab/allocations) so the initial admin DOM stays light.
+    # The Customers tab's salesperson filter needs the salesperson list (server-side
+    # rendered). The heavy Prices and Allocations tabs are loaded lazily (see
+    # /admin/tab/prices and /admin/tab/allocations) so the initial admin DOM stays light.
     salesperson_users = db.query(models.User).filter(
         models.User.role == models.UserRole.salesperson,
         models.User.is_active.is_(True),
     ).order_by(models.User.name).all()
 
-    all_groups = db.query(models.UserGroup).order_by(models.UserGroup.name).all()
-    group_members = {}
-    for sp in salesperson_users:
-        if sp.group_id:
-            group_members.setdefault(sp.group_id, []).append(sp)
-
     return render("admin.html",
         pending_orders=orders_summary_query(db, status=models.OrderStatus.submitted, order_asc=True),
         stock_alerts=stock_alerts,
         salesperson_users=salesperson_users,
-        all_groups=all_groups,
-        group_members=group_members,
         role=user.role.value,
         user=user,
     )
@@ -711,24 +809,11 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
                 "unit": pr.unit.value if pr else "",
             })
 
-    salesperson_users = db.query(models.User).filter(
-        models.User.role == models.UserRole.salesperson,
-        models.User.is_active.is_(True),
-    ).order_by(models.User.name).all()
-
-    all_groups = db.query(models.UserGroup).order_by(models.UserGroup.name).all()
-    group_members = {}
-    for sp in salesperson_users:
-        if sp.group_id:
-            group_members.setdefault(sp.group_id, []).append(sp)
-
-    preset_rows = db.query(models.ProductPreset).all()
-    preset_map = {}
-    for r in preset_rows:
-        if r.user_id:
-            preset_map[(r.product_id, 'user', r.user_id)] = r.weekly_qty
-        elif r.group_id:
-            preset_map[(r.product_id, 'group', r.group_id)] = r.weekly_qty
+    # Per-salesperson weekly presets, keyed for quick template lookup.
+    preset_map = {
+        (r.product_id, 'user', r.user_id): r.weekly_qty
+        for r in db.query(models.ProductPreset).all()
+    }
 
     # Preset schedule settings (create row with defaults if absent)
     schedule = db.query(models.AllocationSettings).first()
@@ -745,8 +830,6 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
         fcfs_pools=fcfs_pools,
         critical_allocs=critical_allocs,
         product_stock=product_stock,
-        all_groups=all_groups,
-        group_members=group_members,
         preset_map=preset_map,
         schedule=schedule,
         attention_map=attention_map,
