@@ -163,6 +163,15 @@ class Lot(Base):
     id = Column(Integer, primary_key=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     lot_code = Column(String, nullable=False)             # e.g. warehouse batch label
+
+    # ── Shipment grouping (for the warehouse screen) ──────────────────────
+    # A shipment is what the team also calls the "lot number" (e.g. "N6185").
+    # One shipment can arrive across several containers, and each container
+    # holds several items (these Lot rows). Both are just the numbers written
+    # on the arrival paperwork for now; nullable so older lots stay valid.
+    shipment_no  = Column(String, nullable=True, index=True)  # e.g. "N6185" (a.k.a. lot number)
+    container_no = Column(String, nullable=True)              # container within the shipment
+
     received_date = Column(DateTime, default=datetime.utcnow)
     qty_on_hand = Column(Integer, default=0, nullable=False)  # physical stock count for this lot
     notes = Column(Text, nullable=True)

@@ -177,6 +177,33 @@ def seed():
 
         db.flush()
 
+        # ── Sample shipments for the warehouse screen ──────────────────────
+        # Group a handful of the placeholder lots into realistic shipments so
+        # the warehouse view has something to show. A shipment (a.k.a. the
+        # "lot number", e.g. N6185) can span several containers, and each
+        # container holds several items. Real numbers come from the arrival
+        # paperwork later; this is only demo data.
+        #   (shipment_no, received_date, [ (container_no, [lot index, ...]), ... ])
+        sample_shipments = [
+            ("N6185", datetime(2026, 7, 2), [
+                ("MSKU 210 4567", [0, 1, 2]),   # container 1: 3 items
+                ("TGHU 887 2231", [3, 4]),      # container 2: 2 items
+            ]),
+            ("N6190", datetime(2026, 7, 4), [
+                ("CAIU 553 9080", [5, 6]),      # single-container shipment
+            ]),
+        ]
+        for shipment_no, recv, containers in sample_shipments:
+            for container_no, lot_idxs in containers:
+                for idx in lot_idxs:
+                    if idx < len(lots):
+                        lot = lots[idx]
+                        lot.shipment_no = shipment_no
+                        lot.container_no = container_no
+                        lot.received_date = recv
+                        lot.qty_on_hand = 120   # sample stock so it shows on the warehouse screen
+        db.flush()
+
         # ── Allocations (all start at 0 — admin tops up via the app) ───────
         print("Creating allocations...")
         alloc_count = 0

@@ -530,19 +530,26 @@ def lot_photos_page(lot_id: int, request: Request, db: Session = Depends(get_db)
 
 @router.get("/app/warehouse", response_class=HTMLResponse)
 def warehouse_page(request: Request, db: Session = Depends(get_db)):
-    """Warehouse landing screen: a list of current lots (batches/shipments) to
-    photograph, each linking to the existing lot photo page. Warehouse + admin only."""
+    """Warehouse landing screen. Shows current stock grouped as
+    Shipment -> Container -> items, each item linking to its quality-photo
+    page. A shipment is what the team also calls the "lot number" (e.g.
+    N6185). Warehouse + admin only."""
     user, redirect = login_required(request, db)
     if redirect:
         return redirect
     if user.role not in (models.UserRole.warehouse, models.UserRole.admin):
         return RedirectResponse("/app/orders", status_code=302)
 
-    # Lots with stock on hand, newest received first.
+    # Lots with stock on hand. Order newest shipment first, then by container
+    # so items land under the right heading in a single pass below.
     lots = (
         db.query(models.Lot)
         .filter(models.Lot.qty_on_hand > 0)
-        .order_by(models.Lot.received_date.desc())
+        .order_by(
+            models.Lot.received_date.desc(),
+            models.Lot.shipment_no,
+            models.Lot.container_no,
+        )
         .all()
     )
 
@@ -562,73 +569,55 @@ def warehouse_page(request: Request, db: Session = Depends(get_db)):
         .all()
     ) if lots else {}
 
-    lot_rows = [
-        {
+    # Build the Shipment -> Container -> items tree. Dicts keep insertion
+    # order (Python 3.7+), so the query's ordering is preserved for display.
+    shipments = {}      # shipment_no -> shipment dict
+    for l in lots:
+        s_no = l.shipment_no or "Unassigned"
+        c_no = l.container_no or "No container"
+
+        ship = shipments.get(s_no)
+        if ship is None:
+            ship = shipments[s_no] = {
+                "shipment_no": s_no,
+                "received_date": str(l.received_date)[:10] if l.received_date else "",
+                "containers": {},   # container_no -> list of item dicts
+                "item_count": 0,
+                "photo_done": 0,    # items with at least one photo
+            }
+
+        photo_count = photo_counts.get(l.id, 0)
+        ship["containers"].setdefault(c_no, []).append({
             "id": l.id,
             "lot_code": l.lot_code,
             "product_name": prod_names.get(l.product_id, "--"),
-            "received_date": str(l.received_date)[:10] if l.received_date else "",
             "qty_on_hand": l.qty_on_hand,
-            "photo_count": photo_counts.get(l.id, 0),
-        }
-        for l in lots
-    ]
+            "photo_count": photo_count,
+        })
+        ship["item_count"] += 1
+        if photo_count > 0:
+            ship["photo_done"] += 1
 
-    return render("warehouse.html",
-        lots=lot_rows,
-        role=user.role.value,
-        user=user,
-    )
-
-
-@router.get("/app/warehouse", response_class=HTMLResponse)
-def warehouse_page(request: Request, db: Session = Depends(get_db)):
-    """Warehouse landing screen: a list of current lots (batches/shipments) to
-    photograph, each linking to the existing lot photo page. Warehouse + admin only."""
-    user, redirect = login_required(request, db)
-    if redirect:
-        return redirect
-    if user.role not in (models.UserRole.warehouse, models.UserRole.admin):
-        return RedirectResponse("/app/orders", status_code=302)
-
-    # Lots with stock on hand, newest received first.
-    lots = (
-        db.query(models.Lot)
-        .filter(models.Lot.qty_on_hand > 0)
-        .order_by(models.Lot.received_date.desc())
-        .all()
-    )
-
-    # Product names for the lots, in one query (no N+1).
-    prod_ids = {l.product_id for l in lots}
-    prod_names = dict(
-        db.query(models.Product.id, models.Product.description)
-        .filter(models.Product.id.in_(prod_ids))
-        .all()
-    ) if prod_ids else {}
-
-    # How many photos each lot already has, in one grouped query.
-    photo_counts = dict(
-        db.query(models.LotPhoto.lot_id, _func2.count(models.LotPhoto.id))
-        .filter(models.LotPhoto.lot_id.in_([l.id for l in lots]))
-        .group_by(models.LotPhoto.lot_id)
-        .all()
-    ) if lots else {}
-
-    lot_rows = [
+    # Flatten to lists the template can loop over simply.
+    shipment_rows = [
         {
-            "id": l.id,
-            "lot_code": l.lot_code,
-            "product_name": prod_names.get(l.product_id, "--"),
-            "received_date": str(l.received_date)[:10] if l.received_date else "",
-            "qty_on_hand": l.qty_on_hand,
-            "photo_count": photo_counts.get(l.id, 0),
+            **ship,
+            "container_count": len(ship["containers"]),
+            "containers": [
+                {
+                    "container_no": c_no,
+                    "lots": items,
+                    "item_count": len(items),
+                    "photo_done": sum(1 for it in items if it["photo_count"] > 0),
+                }
+                for c_no, items in ship["containers"].items()
+            ],
         }
-        for l in lots
+        for ship in shipments.values()
     ]
 
     return render("warehouse.html",
-        lots=lot_rows,
+        shipments=shipment_rows,
         role=user.role.value,
         user=user,
     )

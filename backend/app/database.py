@@ -46,6 +46,9 @@ def get_db():
 # Each entry: (table, column, SQL type). Safe to run on every startup.
 _ADDED_COLUMNS = [
     ("lots",             "sale_priority",    "INTEGER"),
+    # Shipment grouping for the warehouse screen (a.k.a. lot number, e.g. N6185)
+    ("lots",             "shipment_no",      "VARCHAR"),
+    ("lots",             "container_no",     "VARCHAR"),
     ("order_line_items", "lot_note",         "TEXT"),
     # Customer master mirror (Phase 3a)
     ("customers",        "contact_person",   "TEXT"),

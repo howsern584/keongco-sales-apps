@@ -31,7 +31,13 @@
 
   <!-- Top bar -->
   <header class="bg-brand text-white px-4 py-3 flex items-center justify-between shadow sticky top-0 z-10">
-    <span class="font-bold text-lg" data-i18n="app_name">Keongco Sales</span>
+    <div class="flex flex-col leading-tight">
+      <span class="font-bold text-lg" data-i18n="app_name">Keongco Sales</span>
+      {% if show_nav and user %}
+      <!-- Logged-in user's name, shown under the app title on every page -->
+      <span class="text-xs text-white/80 truncate max-w-[180px]">{{ user.name }}</span>
+      {% endif %}
+    </div>
     <div class="flex items-center gap-2">
       {% if show_nav and role in ('salesperson', 'admin') %}
       <a href="/app/price-updates" title="Price updates" aria-label="Price updates"
