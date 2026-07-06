@@ -163,6 +163,33 @@ def return_on_reject(db: Session, order: models.Order) -> None:
             pool.available_qty = pool.total_qty - pool.reserved_qty
 
 
+def set_new_product_pool(db: Session, product, stock_units: int, pool_pct: int) -> int:
+    """Put a NEW / no-history product into FCFS shared-pool mode, with the pool sized to
+    pool_pct% of its current physical stock. Everyone can then sell it from one shared pool
+    until it builds sales history (after which auto-calculate converts it to per-rep presets).
+
+    Preserves any already-reserved qty and clears individual allocations (mutual exclusion,
+    mirroring set_allocation / set_fcfs_pool). Returns the pool total set.
+    """
+    total = int(stock_units * max(0, pool_pct) / 100)
+    pool = (
+        db.query(models.FcfsPool)
+        .filter(models.FcfsPool.product_id == product.id)
+        .first()
+    )
+    if pool is None:
+        pool = models.FcfsPool(product_id=product.id, reserved_qty=0)
+        db.add(pool)
+    pool.total_qty = total
+    pool.available_qty = max(0, total - (pool.reserved_qty or 0))
+    product.allocation_mode = models.AllocationMode.fcfs
+    db.query(models.Allocation).filter(
+        models.Allocation.product_id == product.id
+    ).update({"allocated_qty": 0, "used_qty": 0, "remaining_qty": 0},
+             synchronize_session=False)
+    return total
+
+
 def _get_allocation(db: Session, salesperson_id: int, product_id: int):
     return (
         db.query(models.Allocation)

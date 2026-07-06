@@ -1,18 +1,18 @@
 """
 orders.py
 ---------
-The salesperson's order-entry flow:
+The salesperson's order-entry flow. The rep owns every step -- there is NO admin
+approval in between:
 
   1. POST /orders                  -> start a new DRAFT order (pick the customer)
   2. POST /orders/{id}/lines       -> add a product line (qty + price)
-  3. POST /orders/{id}/submit      -> send it for admin review
-  4. GET  /orders  /  GET /orders/{id}  -> view orders
+  3. POST /orders/{id}/submit      -> CONFIRM the order (reserves stock)
+  4. POST /orders/{id}/push-to-sage-> the rep pushes their own order to Sage 300
+  5. POST /orders/{id}/reopen      -> edit again (incl. AMEND an already-pushed order)
+  6. GET  /orders  /  GET /orders/{id}  -> view orders
 
 Price rule enforced here: a line's unit_price must fall within the product's
 price_floor..price_ceiling (the range admin sets). On-hold products are blocked.
-
-NOTE: allocation limits (how much each salesperson may sell) and FCFS reservation
-are enforced in Phase 2c -- marked with TODO below so we don't forget.
 """
 
 from datetime import datetime
@@ -170,14 +170,16 @@ def update_order_details(order_id: int, payload: schemas.OrderDetailsUpdate,
 
 @router.post("/{order_id}/submit", response_model=schemas.OrderOut)
 def submit_order(order_id: int, db: Session = Depends(get_db)):
-    """Submit a draft order for admin review. (Stock gets reserved here in Phase 2c.)"""
+    """CONFIRM a draft order. This is the rep's 'finalize' step: it reserves stock
+    (reserve-on-save) and moves the order to 'submitted' (Confirmed / ready to push).
+    From here the rep pushes it to Sage themselves -- no admin approval."""
     order = db.query(models.Order).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     if order.status != models.OrderStatus.draft:
-        raise HTTPException(status_code=400, detail="Only draft orders can be submitted")
+        raise HTTPException(status_code=400, detail="Only draft orders can be confirmed")
     if len(order.line_items) == 0:
-        raise HTTPException(status_code=400, detail="Cannot submit an empty order")
+        raise HTTPException(status_code=400, detail="Cannot confirm an empty order")
 
     # Reserve/deduct stock now that the order is being submitted.
     try:
@@ -193,14 +195,17 @@ def submit_order(order_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{order_id}/reopen", response_model=schemas.OrderOut)
 def reopen_order(order_id: int, request: Request, db: Session = Depends(get_db)):
-    """Move a submitted or rejected order back to DRAFT so its owner can edit it.
+    """Move an order back to DRAFT so its owner can edit it.
 
-    Submitted orders release the stock they had reserved; rejected orders already
-    released theirs at rejection time; drafts are returned unchanged.
+    Handles both normal editing and AMENDING an already-pushed order:
+      - submitted (Confirmed):   release the reserved stock.
+      - pushed_to_sage (AMEND):  release the reserved stock and flag needs_resync=True.
+                                 The Sage references are KEPT so the rep can see that
+                                 Sage still holds the old copy and must be re-pushed.
+      - rejected (Cancelled):    stock was already returned when it was cancelled.
+      - draft:                   already editable, returned unchanged.
 
-    Own orders only: reopening is the first step of editing, so only the order's
-    own salesperson may do it. An admin can edit their OWN orders (they sell too)
-    but may only approve/reject another rep's order — never reopen/edit it.
+    Own orders only: only the order's own salesperson may reopen/amend it.
     """
     order = db.query(models.Order).get(order_id)
     if order is None:
@@ -215,10 +220,13 @@ def reopen_order(order_id: int, request: Request, db: Session = Depends(get_db))
 
     if order.status == models.OrderStatus.draft:
         return order   # already editable
-    if order.status == models.OrderStatus.submitted:
+    if order.status in (models.OrderStatus.submitted, models.OrderStatus.pushed_to_sage):
         stock.return_on_reject(db, order)   # give reserved stock back
-    elif order.status == models.OrderStatus.rejected:
-        pass   # stock was already returned when it was rejected
+        if order.status == models.OrderStatus.pushed_to_sage:
+            # Amending a pushed order: Sage still has the OLD copy -> must re-push.
+            order.needs_resync = True
+    elif order.status in (models.OrderStatus.rejected, models.OrderStatus.approved):
+        pass   # rejected: stock already returned; approved: legacy, no stock change
     else:
         raise HTTPException(status_code=400,
                             detail="This order can no longer be edited.")
@@ -264,17 +272,18 @@ def delete_order(order_id: int, db: Session = Depends(get_db)):
 def duplicate_order(order_id: int, db: Session = Depends(get_db)):
     """Clone an existing order into a new draft with the same customer + line items.
     The salesperson can then adjust quantities/prices before submitting.
-    Only approved or pushed-to-sage orders can be duplicated."""
+    Only pushed/invoiced (or legacy approved) orders can be duplicated."""
     original = db.query(models.Order).get(order_id)
     if original is None:
         raise HTTPException(status_code=404, detail="Order not found")
     if original.status not in (
         models.OrderStatus.approved,
         models.OrderStatus.pushed_to_sage,
+        models.OrderStatus.invoiced,
     ):
         raise HTTPException(
             status_code=400,
-            detail="Only approved or completed orders can be reordered.",
+            detail="Only completed orders can be reordered.",
         )
 
     # Create a new draft order for the same customer + salesperson
@@ -315,6 +324,111 @@ def update_sage_refs(order_id: int, payload: schemas.SageRefsUpdate,
         order.sage_order_ref = payload.sage_order_ref or None
     if payload.sage_invoice_no is not None:
         order.sage_invoice_no = payload.sage_invoice_no or None
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post("/{order_id}/push-to-sage", response_model=schemas.OrderOut)
+def push_to_sage(order_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    The salesperson pushes their OWN confirmed order to Sage 300. No admin approval.
+
+    PLACEHOLDER (Phase 2): pretends to push to Sage and logs what it would send.
+    In Phase 3 this becomes the real Sage 300 .NET SDK write path.
+
+    Re-push after an amend: if the order was pushed before (needs_resync / a Sage ref
+    already exists), Phase 3 must send an UPDATE / cancel-replace to Sage rather than
+    creating a new order. The mock keeps the same SC reference and clears needs_resync.
+    """
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    if order.salesperson_id != user.id:
+        raise HTTPException(status_code=403, detail="You can only push your own orders.")
+
+    # A confirmed order is ready to push. 'approved' is accepted for legacy rows.
+    if order.status not in (models.OrderStatus.submitted, models.OrderStatus.approved):
+        raise HTTPException(
+            status_code=400,
+            detail="Only a confirmed order can be pushed to Sage.",
+        )
+
+    is_repush = order.needs_resync or bool(order.sage_order_ref)
+
+    # --- PHASE 3 TODO: replace everything below with the real Sage SDK call ---
+    customer = db.query(models.Customer).get(order.customer_id)
+    lines_summary = [
+        {
+            "sage_item_code": db.query(models.Product).get(li.product_id).sage_item_code,
+            "quantity": li.quantity,
+            "unit_price": li.unit_price,
+            "line_total": li.line_total,
+        }
+        for li in order.line_items
+    ]
+    # The SC number is our reference key — Sage stores this so we can trace back.
+    sc_ref = f"SC{order.id:06d}"
+
+    action = "UPDATE (re-sync amended order)" if is_repush else "CREATE"
+    print(f"=== [MOCK] Push to Sage 300 — {action} ===")
+    print(f"  Salesperson:     {user.name} (#{user.id})")
+    print(f"  Customer:        {customer.sage_customer_code} -- {customer.name}")
+    print(f"  SC Reference:    {sc_ref}   <-- stored in Sage Customer PO / Reference field")
+    for l in lines_summary:
+        print(f"  Line: {l['sage_item_code']}  qty={l['quantity']}  "
+              f"price={l['unit_price']}  total={l['line_total']}")
+    print("=== [MOCK] Phase 3 will send sc_ref to Sage SDK here ===")
+    # Phase 3: on re-push, look up the existing Sage order by sc_ref and UPDATE it.
+    # --- end of placeholder ---
+
+    order.status = models.OrderStatus.pushed_to_sage
+    order.pushed_at = datetime.utcnow()
+    order.needs_resync = False
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post("/{order_id}/sync-from-sage", response_model=schemas.OrderOut)
+def sync_from_sage(order_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Pull this order's Sage sales-order and invoice numbers back into the app, using
+    the SC reference (SC000001) that was sent to Sage on push. Owner-only.
+
+    Phase 2 STUB: returns simulated values so the UI is fully wired.
+    Phase 3: replace the stub with a real read-only Sage DB query keyed on the SC ref.
+    """
+    order = db.query(models.Order).get(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    if order.salesperson_id != user.id:
+        raise HTTPException(status_code=403, detail="You can only sync your own orders.")
+
+    if order.status not in (models.OrderStatus.pushed_to_sage, models.OrderStatus.invoiced):
+        raise HTTPException(status_code=400, detail="Order has not been pushed to Sage yet")
+
+    sc_ref = f"SC{order.id:06d}"
+
+    # --- PHASE 3 TODO: replace this stub with a real read-only Sage DB query keyed on
+    # the SC reference. It should return Sage's own OE order number (e.g. PSO00123456)
+    # and, once invoicing has posted it, the invoice number. ---
+    # We only fill the OE order number here. The invoice number is NOT faked: an order
+    # only becomes "invoiced" when invoicing marks it (mark-invoiced) or, in Phase 3,
+    # when Sage actually reports an invoice against it.
+    stub_so = order.sage_order_ref or f"SO-{order.id:06d}"
+    print(f"[STUB] sync-from-sage for {sc_ref}: would return Sage OE number {stub_so}")
+    # --- end stub ---
+
+    order.sage_order_ref = stub_so
     db.commit()
     db.refresh(order)
     return order

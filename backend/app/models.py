@@ -44,11 +44,12 @@ class AllocationMode(str, enum.Enum):
 
 
 class OrderStatus(str, enum.Enum):
-    draft = "draft"               # salesperson still editing
-    submitted = "submitted"       # sent for review (already reserves stock)
-    approved = "approved"         # admin approved
-    pushed_to_sage = "pushed_to_sage"  # written into Sage 300 (Phase 3)
-    rejected = "rejected"         # admin rejected; stock returns
+    draft = "draft"               # salesperson still editing (no stock reserved)
+    submitted = "submitted"       # CONFIRMED / ready to push -- stock reserved here
+    approved = "approved"         # LEGACY (admin approval removed); kept for old rows
+    pushed_to_sage = "pushed_to_sage"  # salesperson pushed it into Sage 300 (Phase 3)
+    invoiced = "invoiced"         # invoicing turned the Sage OE into an invoice -> LOCKED
+    rejected = "rejected"         # CANCELLED / voided; stock returns
 
 
 class ProductUnit(str, enum.Enum):
@@ -234,7 +235,12 @@ class FcfsPool(Base):
 
 
 class Order(Base):
-    """A sales order. Moves through: draft -> submitted -> approved -> pushed_to_sage."""
+    """A sales order. Moves through: draft -> submitted (confirmed) -> pushed_to_sage.
+
+    The salesperson owns the whole flow: they CONFIRM the order (status 'submitted',
+    which reserves stock) and then PUSH it to Sage themselves -- there is no admin
+    approval step. The old 'approved' status is retained only for legacy rows.
+    """
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True)
@@ -250,8 +256,13 @@ class Order(Base):
     transport   = Column(String(100), nullable=True)      # e.g. Keongco, Tong Transport
     customer_po = Column(String(60), nullable=True)       # buyer's own PO / contract no. (Sage can't infer)
 
-    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # which admin
-    approved_at = Column(DateTime, nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # legacy: which admin approved (approval removed)
+    approved_at = Column(DateTime, nullable=True)          # legacy approval timestamp (kept for old rows)
+    pushed_at   = Column(DateTime, nullable=True)          # when the salesperson pushed it to Sage
+    invoiced_at = Column(DateTime, nullable=True)          # when invoicing converted the OE to an invoice (order then LOCKED)
+    # True after a pushed order is amended: Sage still holds the OLD copy, so the
+    # salesperson must push again to re-sync. Cleared on (re-)push.
+    needs_resync = Column(Boolean, default=False, nullable=False)
     sage_order_ref  = Column(String, nullable=True)        # Sage sales order number
     sage_invoice_no = Column(String, nullable=True)        # Sage invoice number (after invoicing completes)
     reject_note = Column(Text, nullable=True)
@@ -310,10 +321,14 @@ class AllocationSettings(Base):
     max_qty_per_person   = Column(Integer, default=4000, nullable=False)  # weekly cap per person per product
     round_step           = Column(Integer, default=10,   nullable=False)  # round preset up to nearest this
     min_alloc_mt         = Column(Float,   default=1.0,  nullable=False)  # skip products below this many MT
+    # New / no-history products can't use a sales share yet, so they go into a shared
+    # FCFS pool sized to this % of current stock until they build sales history.
+    new_product_pool_pct = Column(Integer, default=70,   nullable=False)  # % of stock for a new product's pool
 
     auto_renewal_enabled = Column(Boolean,  default=False, nullable=False)  # True = a schedule is set
     last_run_at          = Column(DateTime, nullable=True)   # when "Apply All Presets" was last run
-    next_run_at          = Column(DateTime, nullable=True)   # informational only (no auto-runner yet)
+    last_stock_sync_at   = Column(DateTime, nullable=True)   # when the daily stock sync last ran
+    next_run_at          = Column(DateTime, nullable=True)   # informational; the runner (scheduler.py) uses reset_day + last_run_at
     reset_day            = Column(Integer,  nullable=True)   # 0=Mon … 6=Sun; None = manual only
     notes                = Column(String,   nullable=True)   # admin note, e.g. "Every Monday after delivery"
     updated_at           = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

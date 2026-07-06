@@ -6,7 +6,7 @@
   <div class="flex items-center justify-between mb-1">
     <span class="font-semibold"># {{ order.id }} — {{ order.customer_name }}</span>
     <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">
-      {{ order.status | replace('_',' ') | title }}
+      {{ order.status | status_label }}
     </span>
   </div>
   <div class="text-sm text-gray-500 flex justify-between">

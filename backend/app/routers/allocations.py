@@ -20,7 +20,8 @@ from sqlalchemy import func as _func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from .. import models, schemas
+from .. import models, schemas, stock
+from .pages import get_current_user
 
 router = APIRouter(prefix="/admin", tags=["admin: stock control"])
 
@@ -511,6 +512,12 @@ def auto_calculate_presets(db: Session = Depends(get_db)):
         sp_sales = sales_by_product.get(product.id, {})
         team_total = sum(sp_sales.values())
         if team_total == 0:
+            # No sales history yet -> can't compute a per-rep share. Put the product in a
+            # shared FCFS pool sized to new_product_pool_pct% of stock so everyone can sell
+            # it. It converts to per-rep presets automatically once it has sales (a later
+            # run sees team_total > 0 and apply-presets switches it off the pool).
+            stock.set_new_product_pool(db, product, total_stock, s.new_product_pool_pct)
+            products_touched += 1
             continue
 
         products_touched += 1
@@ -574,11 +581,12 @@ def set_allocation_schedule(payload: SchedulePayload, db: Session = Depends(get_
 
 
 class AutoCalcSettingsPayload(BaseModel):
-    sales_weeks:        int
-    stock_buffer_pct:   int
-    max_qty_per_person: int
-    round_step:         int
-    min_alloc_mt:       float
+    sales_weeks:          int
+    stock_buffer_pct:     int
+    max_qty_per_person:   int
+    round_step:           int
+    min_alloc_mt:         float
+    new_product_pool_pct: int = 70
 
 
 @router.post("/auto-calc-settings")
@@ -595,13 +603,16 @@ def set_auto_calc_settings(payload: AutoCalcSettingsPayload, db: Session = Depen
         raise HTTPException(400, "Round-up step must be at least 1.")
     if not (0 <= payload.min_alloc_mt <= 10_000):
         raise HTTPException(400, "Minimum stock (MT) must be 0 or more.")
+    if not (1 <= payload.new_product_pool_pct <= 100):
+        raise HTTPException(400, "New-product pool % must be between 1 and 100.")
 
     s = _get_or_create_settings(db)
-    s.sales_weeks        = payload.sales_weeks
-    s.stock_buffer_pct   = payload.stock_buffer_pct
-    s.max_qty_per_person = payload.max_qty_per_person
-    s.round_step         = payload.round_step
-    s.min_alloc_mt       = payload.min_alloc_mt
+    s.sales_weeks          = payload.sales_weeks
+    s.stock_buffer_pct     = payload.stock_buffer_pct
+    s.max_qty_per_person   = payload.max_qty_per_person
+    s.round_step           = payload.round_step
+    s.min_alloc_mt         = payload.min_alloc_mt
+    s.new_product_pool_pct = payload.new_product_pool_pct
     db.commit()
     return {"ok": True}
 
@@ -666,6 +677,17 @@ def apply_presets(db: Session = Depends(get_db)):
         if smt is not None and smt < min_alloc_mt:
             skipped_low_stock += 1
             continue
+        # First time we touch this product: convert it OFF the shared pool (if it was a
+        # new/no-history product) to per-rep allocation, and zero its pool so the same
+        # stock isn't counted twice (mutual exclusion).
+        if preset.product_id not in products_touched:
+            if product.allocation_mode == models.AllocationMode.fcfs:
+                product.allocation_mode = models.AllocationMode.manual_topup
+            pool = db.query(models.FcfsPool).filter_by(product_id=preset.product_id).first()
+            if pool and (pool.total_qty or pool.reserved_qty or pool.available_qty):
+                pool.total_qty = 0
+                pool.reserved_qty = 0
+                pool.available_qty = 0
         products_touched.add(preset.product_id)
         _upsert_alloc(preset.user_id, preset.product_id, preset.weekly_qty, product)
         allocations_set += 1
@@ -704,6 +726,24 @@ def apply_presets(db: Session = Depends(get_db)):
         "skipped_low_stock": skipped_low_stock,
         "cleared_low_stock": cleared_low_stock,
     }
+
+
+@router.post("/sync-stock-now")
+def sync_stock_now(request: Request, db: Session = Depends(get_db)):
+    """Manually pull the latest warehouse stock from the report (admin/invoicing only).
+    This only refreshes physical stock and adds new products -- it never touches per-rep
+    allocations (daily stock sync is decoupled from the weekly allocation reset)."""
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    if user.role != models.UserRole.admin:
+        raise HTTPException(status_code=403, detail="Only admin can sync stock.")
+
+    from ..import_stock import sync_stock   # local import avoids a heavy pandas import at boot
+    result = sync_stock(db)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Stock sync failed."))
+    return result
 
 
 @router.get("/stock-alerts", response_model=List[schemas.StockAlertOut])

@@ -13,7 +13,7 @@
     <span data-i18n="order_id">Order #</span>{{ order.id | order_no }}
   </h2>
   <span class="ml-auto text-xs font-medium px-3 py-1 rounded-full badge-{{ order.status }}">
-    {{ order.status | replace('_',' ') | title }}
+    {{ order.status | status_label }}
   </span>
 </div>
 
@@ -54,9 +54,14 @@
     <span class="font-medium text-right text-sm">{{ order.order_notes }}</span>
   </div>
   {% endif %}
-  {% if order.approved_at %}
+  {% if order.pushed_at %}
   <div class="flex justify-between">
-    <span class="text-gray-500" data-i18n="approve_btn">Approved</span>
+    <span class="text-gray-500">Pushed to Sage</span>
+    <span class="font-medium">{{ order.pushed_at | string | truncate(10, true, '') }}</span>
+  </div>
+  {% elif order.approved_at %}
+  <div class="flex justify-between">
+    <span class="text-gray-500">Approved (legacy)</span>
     <span class="font-medium">{{ order.approved_at | string | truncate(10, true, '') }}</span>
   </div>
   {% endif %}
@@ -78,8 +83,26 @@
   {% endif %}
 </div>
 
-<!-- Admin: Sage reference panel (shown once pushed to Sage) -->
-{% if role == 'admin' and order.status == 'pushed_to_sage' %}
+<!-- Amended-order warning: Sage still has the old copy until the rep re-pushes -->
+{% if is_own_order and order.needs_resync and order.status != 'pushed_to_sage' %}
+<div class="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 mb-4 text-sm text-amber-800">
+  <span class="font-semibold">⚠ Amended order</span> — Sage still holds the old version.
+  Confirm your changes and <span class="font-semibold">Push to Sage again</span> so they match.
+</div>
+{% endif %}
+
+<!-- Locked banner: once invoicing marks it invoiced, the order is final. -->
+{% if order.status == 'invoiced' %}
+<div class="bg-emerald-50 border border-emerald-300 rounded-xl px-4 py-3 mb-4 text-sm text-emerald-800 flex items-center gap-2">
+  <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+  </svg>
+  <span><span class="font-semibold">Invoiced &amp; locked</span> — invoicing has issued the invoice, so this order can no longer be edited.</span>
+</div>
+{% endif %}
+
+<!-- Sage reference panel (shown to the order owner or an admin, once pushed to Sage) -->
+{% if (is_own_order or role == 'admin') and order.status in ('pushed_to_sage', 'invoiced') %}
 <div class="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4">
   <div class="flex items-center justify-between mb-3">
     <div>
@@ -104,33 +127,49 @@
       <span id="display-sage-inv" class="font-mono font-semibold text-purple-800">{{ order.sage_invoice_no or '—' }}</span>
     </div>
   </div>
-  {% if not order.sage_order_ref and not order.sage_invoice_no %}
-  <p class="text-xs text-purple-400 mt-2">Tap "Sync from Sage" after processing the order in Sage Accpac to pull back the SO and invoice numbers.</p>
+  {% if order.status == 'pushed_to_sage' and not order.sage_order_ref %}
+  <p class="text-xs text-purple-400 mt-2">Tap "Sync from Sage" after processing the order in Sage Accpac to pull back the Sage order number.</p>
+  {% endif %}
+
+  <!-- Invoicing/admin: mark this order as invoiced (records the Sage invoice no. and LOCKS it) -->
+  {% if role == 'admin' and order.status == 'pushed_to_sage' %}
+  <button onclick="markInvoiced()"
+          class="w-full mt-3 bg-emerald-600 text-white text-sm font-semibold py-2.5 rounded-lg hover:bg-emerald-700 transition">
+    Mark as Invoiced (lock order)
+  </button>
+  <p class="text-xs text-gray-400 mt-1 text-center">Invoicing use only — this stops the salesperson editing the order.</p>
   {% endif %}
 </div>
 {% endif %}
 
 {% if order.reject_note %}
 <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-sm text-red-700">
-  <span class="font-semibold" data-i18n="reject_note_label">Rejection Note</span>: {{ order.reject_note }}
+  <span class="font-semibold" data-i18n="reject_note_label">Cancellation Note</span>: {{ order.reject_note }}
 </div>
 {% endif %}
 
 <!-- Line items -->
 <div class="bg-white rounded-xl shadow-sm border border-gray-100 divide-y divide-gray-100 mb-4">
   {% for line in lines %}
-  <div class="px-4 py-3 text-sm">
-    <div class="flex justify-between items-start">
-      <div>
-        <div class="font-medium flex items-center gap-1.5">
+  <div class="px-4 py-3">
+    <div class="flex justify-between items-start gap-3">
+      <div class="min-w-0">
+        <!-- ITEM -->
+        <div class="font-semibold text-base text-gray-800 leading-snug flex items-center gap-1.5">
           {{ line.product_name }}
           {% if line.price_override %}
           <span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">⚠ Price Override</span>
           {% endif %}
         </div>
-        <div class="text-gray-500 text-xs mt-0.5">
-          {{ line.quantity }} {{ line.unit }} × RM {{ "%.2f" | format(line.unit_price) }}
-          {% if line.lot_code %} · Lot: {{ line.lot_code }}{% else %} · Lot: auto (default order){% endif %}
+        <!-- QUANTITY × PRICE — larger and clearer -->
+        <div class="mt-1 text-sm text-gray-700">
+          <span class="font-semibold text-gray-900">{{ line.quantity }} {{ line.unit }}</span>
+          <span class="text-gray-400 mx-1.5">×</span>
+          <span class="font-semibold text-gray-900">RM {{ "%.2f" | format(line.unit_price) }}</span>
+        </div>
+        <!-- LOT — small, bottom row -->
+        <div class="mt-0.5 text-xs text-gray-400">
+          {% if line.lot_code %}Lot: {{ line.lot_code }}{% else %}Lot: auto (default order){% endif %}
         </div>
         {% if line.lot_note %}
         <div class="mt-1 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1">
@@ -143,7 +182,8 @@
         </div>
         {% endif %}
       </div>
-      <div class="font-semibold text-brand shrink-0 ml-3">RM {{ "%.2f" | format(line.line_total) }}</div>
+      <!-- LINE TOTAL -->
+      <div class="font-bold text-brand text-base shrink-0 ml-3">RM {{ "%.2f" | format(line.line_total) }}</div>
     </div>
   </div>
   {% endfor %}
@@ -153,8 +193,19 @@
   </div>
 </div>
 
-<!-- Reorder button (for approved or pushed-to-sage orders) -->
-{% if order.status in ('approved', 'pushed_to_sage') %}
+<!-- Amend an already-pushed order (owner only): reopen it to draft to edit, then re-push. -->
+{% if is_own_order and order.status == 'pushed_to_sage' %}
+<button onclick="amendOrder()"
+        class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-3 flex items-center justify-center gap-2">
+  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+  </svg>
+  Amend Order
+</button>
+{% endif %}
+
+<!-- Reorder button (for completed orders: approved/pushed/invoiced) -->
+{% if order.status in ('approved', 'pushed_to_sage', 'invoiced') %}
 <button onclick="reorderThis()"
         class="w-full bg-amber-500 text-white font-semibold py-3 rounded-xl hover:bg-amber-600 transition mb-3 flex items-center justify-center gap-2">
   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -164,16 +215,28 @@
 </button>
 {% endif %}
 
-<!-- Edit an order and resubmit — only the order's OWN owner may do this.
-     Admins are sales reps too, so they can edit their own orders; but for another
-     rep's order an admin sees only Approve/Reject (no Edit). -->
+<!-- Confirm a draft (owner only): reserves stock and makes it ready to Push to Sage. -->
+{% if is_own_order and order.status == 'draft' and lines %}
+<button onclick="confirmOrder()"
+        class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-3 flex items-center justify-center gap-2">
+  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+  </svg>
+  Confirm Order
+</button>
+<p class="text-xs text-gray-400 text-center -mt-1 mb-3">Confirming reserves stock. You can then push it to Sage.</p>
+{% endif %}
+
+<!-- Edit an order and re-confirm — only the order's OWN owner may do this.
+     Admins are sales reps too, so they can edit their own orders; but no one may
+     edit another rep's order. -->
 {% if is_own_order and order.status in ('draft', 'submitted', 'rejected') %}
 <button onclick="editOrder()"
         class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-3 flex items-center justify-center gap-2">
   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
   </svg>
-  {% if order.status == 'draft' %}Edit Order{% else %}Edit &amp; Resubmit{% endif %}
+  {% if order.status == 'draft' %}Edit Order{% else %}Edit &amp; Re-confirm{% endif %}
 </button>
 {% endif %}
 
@@ -185,48 +248,25 @@
 </button>
 {% endif %}
 
-<!-- Admin actions (only shown to admin, only on submitted orders) -->
-{% if role == 'admin' and order.status == 'submitted' %}
-<div class="space-y-3">
-  <button onclick="approveOrder()"
-          class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition">
-    <span data-i18n="approve_btn">Approve</span>
-  </button>
-  <button onclick="showRejectForm()"
-          class="w-full border border-red-400 text-red-600 font-semibold py-3 rounded-xl hover:bg-red-50 transition">
-    <span data-i18n="reject_btn">Reject</span>
-  </button>
-
-  <!-- Reject form (hidden until button clicked) -->
-  <div id="reject-form" class="hidden bg-white rounded-xl border border-red-200 p-4 space-y-3">
-    <textarea id="reject-note" rows="3"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-              data-i18n="reject_note_ph" placeholder="Reason for rejection…"></textarea>
-    <div class="flex gap-2">
-      <button onclick="hideRejectForm()"
-              class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm"
-              data-i18n="btn_cancel">Cancel</button>
-      <button onclick="rejectOrder()"
-              class="flex-1 bg-red-500 text-white py-2 rounded-lg text-sm font-semibold"
-              data-i18n="btn_confirm">Confirm Reject</button>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-<!-- Push to Sage (only for approved orders) -->
-{% if role == 'admin' and order.status == 'approved' %}
+<!-- Push to Sage — the salesperson pushes their OWN confirmed order (no admin approval).
+     Also covers legacy 'approved' orders and re-pushing an amended order. -->
+{% if is_own_order and order.status in ('submitted', 'approved') %}
 <button onclick="pushToSage()"
-        class="w-full bg-purple-600 text-white font-semibold py-3 rounded-xl hover:bg-purple-700 transition">
-  <span data-i18n="push_sage_btn">Push to Sage</span>
+        class="w-full bg-purple-600 text-white font-semibold py-3 rounded-xl hover:bg-purple-700 transition flex items-center justify-center gap-2">
+  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+  </svg>
+  <span>{% if order.needs_resync %}Re-push to Sage{% else %}Push to Sage{% endif %}</span>
 </button>
 {% endif %}
 
-<!-- Invoice actions (shown once order is pushed to Sage) -->
-{% if order.status == 'pushed_to_sage' %}
+<!-- Invoice actions (shown once order is pushed to Sage, and after it is invoiced) -->
+{% if order.status in ('pushed_to_sage', 'invoiced') %}
 <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-3">
   <div class="flex items-center gap-2 mb-3">
-    <span class="text-green-700 font-semibold text-sm">✅ Order pushed to Sage — Invoice ready</span>
+    <span class="text-green-700 font-semibold text-sm">
+      {% if order.status == 'invoiced' %}✅ Invoiced — download or send the invoice{% else %}✅ Order pushed to Sage — Invoice ready{% endif %}
+    </span>
   </div>
   <div class="flex gap-2">
     <!-- Download PDF invoice -->
@@ -273,7 +313,6 @@
 {% block scripts %}
 <script>
 const ORDER_ID = {{ order.id }};
-const ADMIN_ID = {{ admin_id or 'null' }};
 
 // Guard against "tap-through": when the previous screen (e.g. the New Order page)
 // navigates here by tapping a button, the browser can deliver that stray tap to
@@ -295,14 +334,34 @@ async function reorderThis() {
   }
 }
 
+async function confirmOrder() {
+  if (_tapThrough()) return;
+  if (!confirm('Confirm this order? This reserves stock. You can then push it to Sage.')) return;
+  const r = await fetch(`/orders/${ORDER_ID}/submit`, { method: 'POST' });
+  if (r.ok) location.reload();
+  else alert((await r.json()).detail || 'Could not confirm this order.');
+}
+
 async function editOrder() {
   if (_tapThrough()) return;
-  // Reopen to draft (returns reserved stock if it was submitted), then edit.
+  // Reopen to draft (returns reserved stock if it was confirmed), then edit.
   const r = await fetch(`/orders/${ORDER_ID}/reopen`, { method: 'POST' });
   if (r.ok) {
     window.location.href = `/app/orders/new?edit=${ORDER_ID}`;
   } else {
     alert((await r.json()).detail || 'Could not open this order for editing.');
+  }
+}
+
+async function amendOrder() {
+  if (_tapThrough()) return;
+  if (!confirm('Amend this order? It will reopen for editing. Sage keeps the old copy until you push again.')) return;
+  // Reopen a pushed order to draft (returns reserved stock, flags it for re-push), then edit.
+  const r = await fetch(`/orders/${ORDER_ID}/reopen`, { method: 'POST' });
+  if (r.ok) {
+    window.location.href = `/app/orders/new?edit=${ORDER_ID}`;
+  } else {
+    alert((await r.json()).detail || 'Could not open this order for amending.');
   }
 }
 
@@ -317,26 +376,10 @@ async function deleteDraft() {
   }
 }
 
-async function approveOrder() {
-  if (_tapThrough()) return;
-  if (!confirm(t('confirm_approve'))) return;
-  const r = await fetch(`/admin/orders/${ORDER_ID}/approve?admin_id=${ADMIN_ID}`, {method:'POST'});
-  if (r.ok) location.reload(); else alert((await r.json()).detail);
-}
-function showRejectForm()  { document.getElementById('reject-form').classList.remove('hidden'); }
-function hideRejectForm()  { document.getElementById('reject-form').classList.add('hidden'); }
-async function rejectOrder() {
-  const note = document.getElementById('reject-note').value.trim();
-  if (!note) { alert('Please enter a rejection reason.'); return; }
-  const r = await fetch(`/admin/orders/${ORDER_ID}/reject`, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({note})
-  });
-  if (r.ok) location.reload(); else alert((await r.json()).detail);
-}
 async function pushToSage() {
   if (_tapThrough()) return;
   if (!confirm(t('confirm_push'))) return;
-  const r = await fetch(`/admin/orders/${ORDER_ID}/push-to-sage?admin_id=${ADMIN_ID}`, {method:'POST'});
+  const r = await fetch(`/orders/${ORDER_ID}/push-to-sage`, {method:'POST'});
   if (r.ok) location.reload(); else alert((await r.json()).detail);
 }
 
@@ -344,7 +387,7 @@ async function syncFromSage() {
   const btn = document.getElementById('sync-btn');
   btn.disabled = true;
   btn.textContent = 'Syncing…';
-  const r = await fetch(`/admin/orders/${ORDER_ID}/sync-from-sage`, { method: 'POST' });
+  const r = await fetch(`/orders/${ORDER_ID}/sync-from-sage`, { method: 'POST' });
   if (r.ok) {
     const data = await r.json();
     document.getElementById('display-sage-so').textContent  = data.sage_order_ref  || '—';
@@ -356,6 +399,19 @@ async function syncFromSage() {
     btn.disabled = false;
     btn.textContent = 'Sync from Sage';
   }
+}
+
+async function markInvoiced() {
+  if (_tapThrough()) return;
+  const inv = prompt('Enter the Sage invoice number (leave blank to auto-generate a placeholder):', '');
+  if (inv === null) return;   // user cancelled
+  if (!confirm('Mark this order as invoiced? This LOCKS it — the salesperson can no longer edit it.')) return;
+  const r = await fetch(`/admin/orders/${ORDER_ID}/mark-invoiced`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ invoice_no: inv.trim() })
+  });
+  if (r.ok) location.reload();
+  else alert((await r.json()).detail || 'Could not mark as invoiced.');
 }
 </script>
 {% endblock %}

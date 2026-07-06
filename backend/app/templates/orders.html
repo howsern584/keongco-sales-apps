@@ -29,16 +29,16 @@
                    bg-white text-gray-600 border-gray-300">Draft</button>
     <button onclick="setStatus('submitted')" id="chip-submitted"
             class="chip-btn text-xs px-3 py-1 rounded-full border font-medium transition
-                   bg-white text-blue-600 border-blue-300">Submitted</button>
-    <button onclick="setStatus('approved')" id="chip-approved"
-            class="chip-btn text-xs px-3 py-1 rounded-full border font-medium transition
-                   bg-white text-green-600 border-green-300">Approved</button>
+                   bg-white text-blue-600 border-blue-300">Confirmed</button>
     <button onclick="setStatus('rejected')" id="chip-rejected"
             class="chip-btn text-xs px-3 py-1 rounded-full border font-medium transition
-                   bg-white text-red-600 border-red-300">Rejected</button>
+                   bg-white text-red-600 border-red-300">Cancelled</button>
     <button onclick="setStatus('pushed_to_sage')" id="chip-pushed_to_sage"
             class="chip-btn text-xs px-3 py-1 rounded-full border font-medium transition
                    bg-white text-purple-600 border-purple-300">In Sage</button>
+    <button onclick="setStatus('invoiced')" id="chip-invoiced"
+            class="chip-btn text-xs px-3 py-1 rounded-full border font-medium transition
+                   bg-white text-emerald-600 border-emerald-300">Invoiced</button>
   </div>
   <!-- Result count -->
   <p id="filter-count" class="text-xs text-gray-400 hidden"></p>
@@ -55,7 +55,8 @@
     'submitted':      'bg-blue-50   border-blue-200',
     'approved':       'bg-green-50  border-green-200',
     'rejected':       'bg-red-50    border-red-200',
-    'pushed_to_sage': 'bg-purple-50 border-purple-200'
+    'pushed_to_sage': 'bg-purple-50 border-purple-200',
+    'invoiced':       'bg-emerald-50 border-emerald-200'
   } %}
   {% for order in orders %}
   <div class="relative order-card"
@@ -76,7 +77,7 @@
           <div class="flex items-center gap-2 mb-0.5">
             <span class="font-bold text-gray-800 text-base">#{{ order.id | order_no }}</span>
             <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">
-              {{ order.status | replace('_', ' ') | title }}
+              {{ order.status | status_label }}
             </span>
           </div>
           <span class="text-sm text-gray-700 truncate">{{ order.customer_name }}</span>
@@ -104,10 +105,10 @@
         </div>
       </div>
 
-      <!-- Rejection note (always visible if present) -->
+      <!-- Cancellation note (always visible if present) -->
       {% if order.status == 'rejected' and order.reject_note %}
       <div class="mx-3 mb-2 text-xs text-red-700 bg-red-100 rounded px-3 py-1.5">
-        <span class="font-semibold">Rejected:</span> {{ order.reject_note }}
+        <span class="font-semibold">Cancelled:</span> {{ order.reject_note }}
       </div>
       {% endif %}
 
@@ -193,8 +194,8 @@ function setStatus(status) {
   });
   const chipMap = {
     '':'chip-all','draft':'chip-draft','submitted':'chip-submitted',
-    'approved':'chip-approved','rejected':'chip-rejected',
-    'pushed_to_sage':'chip-pushed_to_sage'
+    'rejected':'chip-rejected','pushed_to_sage':'chip-pushed_to_sage',
+    'invoiced':'chip-invoiced'
   };
   const active = document.getElementById(chipMap[status]);
   if (active) {

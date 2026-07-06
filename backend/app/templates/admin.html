@@ -7,12 +7,9 @@
 
 <!-- Tabs -->
 <div class="flex overflow-x-auto border-b border-gray-200 mb-4 gap-0">
-  <button onclick="showTab('pending')" id="tab-pending"
+  <button onclick="showTab('orders')" id="tab-orders"
           class="px-3 py-2 text-sm font-medium border-b-2 border-brand text-brand whitespace-nowrap">
-    Pending
-    {% if pending_orders %}
-    <span class="ml-1 bg-brand text-white text-xs rounded-full px-1.5 py-0.5">{{ pending_orders | length }}</span>
-    {% endif %}
+    Orders
   </button>
   <button onclick="showTab('allocations')" id="tab-allocations"
           class="px-3 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 whitespace-nowrap">
@@ -44,16 +41,16 @@
   {% endif %}
 </div>
 
-<!-- ── Pending orders ── -->
-<div id="pane-pending">
-  {% if pending_orders %}
+<!-- ── Orders overview (all statuses; reps push their own orders, no approval) ── -->
+<div id="pane-orders">
+  {% if recent_orders %}
   <div class="space-y-3">
-    {% for order in pending_orders %}
+    {% for order in recent_orders %}
     <a href="/app/orders/{{ order.id }}"
        class="block bg-white rounded-xl shadow-sm border border-gray-100 px-4 py-4 hover:shadow-md transition">
       <div class="flex items-center justify-between mb-1">
         <span class="font-semibold">#{{ order.id | order_no }} — {{ order.customer_name }}</span>
-        <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-submitted">Submitted</span>
+        <span class="text-xs font-medium px-2 py-0.5 rounded-full badge-{{ order.status }}">{{ order.status | status_label }}</span>
       </div>
       <div class="text-sm text-gray-500 flex justify-between">
         <span>{{ order.salesperson_name }}</span>
@@ -68,7 +65,7 @@
     <svg class="w-14 h-14 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
     </svg>
-    <p class="text-sm">No pending orders — all clear!</p>
+    <p class="text-sm">No orders yet.</p>
   </div>
   {% endif %}
 </div>
@@ -208,7 +205,7 @@
       </div>
       <div class="bg-white rounded-xl border border-gray-100 p-3 text-center shadow-sm">
         <div id="rpt-pending" class="text-2xl font-bold text-amber-600">—</div>
-        <div class="text-xs text-gray-500 mt-1">Pending Review</div>
+        <div class="text-xs text-gray-500 mt-1">Awaiting Push</div>
       </div>
     </div>
     <!-- Sales by SP -->
@@ -481,7 +478,7 @@ function clearPoolUI(productId) {
 }
 
 function showTab(name) {
-  ['pending','allocations','prices','reports','customers','users','alerts'].forEach(t => {
+  ['orders','allocations','prices','reports','customers','users','alerts'].forEach(t => {
     const pane = document.getElementById(`pane-${t}`);
     const tab  = document.getElementById(`tab-${t}`);
     if (!pane || !tab) return;
@@ -591,8 +588,8 @@ async function loadReports() {
 // On load, restore the tab from the URL hash
 (function() {
   const hash = window.location.hash.replace('#','');
-  const valid = ['pending','allocations','prices','reports','customers','users','alerts'];
-  showTab(valid.includes(hash) ? hash : 'pending');
+  const valid = ['orders','allocations','prices','reports','customers','users','alerts'];
+  showTab(valid.includes(hash) ? hash : 'orders');
 })();
 
 // Jump to the inline allocation row for a salesperson + product:
@@ -944,6 +941,27 @@ async function savePresetSchedule() {
 
 // Save the editable Auto-Calculate formula numbers, then reload the tab so the
 // plain-language rules summary re-renders with the new values.
+async function syncStockNow() {
+  const btn = document.getElementById('sync-stock-btn');
+  const msg = document.getElementById('sync-stock-msg');
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Syncing…';
+  const r = await fetch('/admin/sync-stock-now', { method: 'POST' });
+  const data = await r.json().catch(() => ({}));
+  if (r.ok) {
+    msg.textContent = `✓ Synced: ${data.new_products} new, ${data.lots_updated} updated, ${data.lots_added} added, ${data.lots_zeroed} sold out.`;
+    msg.classList.remove('hidden', 'text-red-600'); msg.classList.add('text-green-600');
+    _allocLoaded = false;
+    setTimeout(loadAllocations, 900);   // re-render with fresh stock + shortfall check
+  } else {
+    msg.textContent = data.detail || 'Sync failed.';
+    msg.classList.remove('hidden', 'text-green-600'); msg.classList.add('text-red-600');
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
 async function saveAutoCalcSettings() {
   const body = {
     stock_buffer_pct:   parseInt(document.getElementById('ac-buffer').value),
@@ -951,6 +969,7 @@ async function saveAutoCalcSettings() {
     round_step:         parseInt(document.getElementById('ac-round').value),
     max_qty_per_person: parseInt(document.getElementById('ac-cap').value),
     min_alloc_mt:       parseFloat(document.getElementById('ac-minmt').value),
+    new_product_pool_pct: parseInt(document.getElementById('ac-newpool').value),
   };
   const msgEl = document.getElementById('ac-msg');
   const bad = Object.values(body).some(v => v === null || Number.isNaN(v));

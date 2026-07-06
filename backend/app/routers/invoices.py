@@ -43,8 +43,8 @@ def download_invoice(order_id: int, db: Session = Depends(get_db)):
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    # Only generate invoices for orders that have been pushed to Sage
-    if order.status != models.OrderStatus.pushed_to_sage:
+    # Only generate invoices for orders that have been pushed to Sage (or already invoiced)
+    if order.status not in (models.OrderStatus.pushed_to_sage, models.OrderStatus.invoiced):
         raise HTTPException(
             status_code=400,
             detail="Invoice is only available after the order has been pushed to Sage."
@@ -71,9 +71,12 @@ def download_invoice(order_id: int, db: Session = Depends(get_db)):
         })
         total += li.line_total
 
-    # Format dates nicely
+    # Format dates nicely. The order date shown is when it was pushed to Sage
+    # (falling back to the legacy approved_at for old rows). The template variable
+    # is still called approved_at for backward compatibility with invoice.html.
     invoice_date  = datetime.utcnow().strftime("%d %b %Y")
-    approved_at   = order.approved_at.strftime("%d %b %Y") if order.approved_at else None
+    order_dt      = order.pushed_at or order.approved_at
+    approved_at   = order_dt.strftime("%d %b %Y") if order_dt else None
     delivery_date = order.delivery_date.strftime("%d %b %Y") if order.delivery_date else None
 
     # Render the HTML invoice template

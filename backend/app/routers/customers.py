@@ -275,6 +275,7 @@ def get_last_transport(customer_id: int, request: Request, db: Session = Depends
                 models.OrderStatus.submitted,
                 models.OrderStatus.approved,
                 models.OrderStatus.pushed_to_sage,
+                models.OrderStatus.invoiced,
             ]),
             models.Order.transport.isnot(None),
             models.Order.transport != "",

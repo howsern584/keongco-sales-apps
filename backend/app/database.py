@@ -57,6 +57,11 @@ _ADDED_COLUMNS = [
     ("customers",        "credit_limit",     "REAL"),
     # Per-order buyer PO reference
     ("orders",           "customer_po",      "VARCHAR(60)"),
+    # Rep-driven push to Sage: when the order was pushed, and whether an amended
+    # (already-pushed) order still needs to be re-pushed so Sage matches the app.
+    ("orders",           "pushed_at",        "DATETIME"),
+    ("orders",           "invoiced_at",      "DATETIME"),
+    ("orders",           "needs_resync",     "BOOLEAN NOT NULL DEFAULT 0"),
     # Price-change notifications: when this user last viewed the Price Updates list
     ("users",            "prices_seen_at",   "DATETIME"),
     # Editable Auto-Calculate formula settings. Defaults match the values that were
@@ -66,6 +71,9 @@ _ADDED_COLUMNS = [
     ("allocation_settings", "max_qty_per_person", "INTEGER NOT NULL DEFAULT 4000"),
     ("allocation_settings", "round_step",         "INTEGER NOT NULL DEFAULT 10"),
     ("allocation_settings", "min_alloc_mt",       "REAL NOT NULL DEFAULT 1.0"),
+    # New-product shared-pool sizing + daily stock-sync bookkeeping.
+    ("allocation_settings", "new_product_pool_pct", "INTEGER NOT NULL DEFAULT 70"),
+    ("allocation_settings", "last_stock_sync_at",   "DATETIME"),
 ]
 # New TABLES (customer_prices, price_change_events) are created by create_all().
 

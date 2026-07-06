@@ -27,6 +27,23 @@ router = APIRouter()
 _env = Environment(loader=FileSystemLoader("app/templates", encoding="utf-8"), autoescape=True, auto_reload=True)
 _env.filters["order_no"] = lambda v: f"SC{int(v):06d}"
 
+# Friendly, rep-facing labels for each order status. The DB still stores the
+# original enum values (submitted/approved/rejected), but the workflow changed:
+# 'submitted' now means the rep CONFIRMED the order, 'rejected' means CANCELLED,
+# and 'approved' is a legacy value from before admin approval was removed.
+_STATUS_LABELS = {
+    "draft": "Draft",
+    "submitted": "Confirmed",
+    "approved": "Approved",          # legacy
+    "pushed_to_sage": "In Sage",
+    "invoiced": "Invoiced",
+    "rejected": "Cancelled",
+}
+def _status_label(v):
+    v = v.value if hasattr(v, "value") else str(v)
+    return _STATUS_LABELS.get(v, v.replace("_", " ").title())
+_env.filters["status_label"] = _status_label
+
 # Canonical category display order (first 2 chars of sage_item_code, lowercase).
 # Used wherever products are listed so every screen shows the same sequence.
 _CAT_ORDER = ['on', 'sh', 'gi', 'po', 'ga', 'co', 'pa', 'be', 'sp', 'dc']
@@ -263,8 +280,8 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
 
     # ── Edit mode: preload an existing DRAFT order the current user OWNS ──
     # Own orders only — a salesperson (incl. an admin acting as a rep) may edit
-    # only their own order. Admins cannot edit another rep's order (approve/reject
-    # only); enforced here server-side, not just by hiding the button.
+    # only their own order. No one may edit another rep's order; enforced here
+    # server-side, not just by hiding the button.
     edit_order = None
     edit_lines = {}          # product_id -> {qty, price, lot_id, lot_note}
     edit_customer = None
@@ -383,10 +400,9 @@ def order_detail_page(order_id: int, request: Request, db: Session = Depends(get
         lines=lines,
         total=total,
         role=user.role.value,
-        admin_id=user.id if user.role == models.UserRole.admin else None,
-        # Only the order's own owner may edit it. Admins are sales reps too, so they
-        # can edit THEIR OWN orders — but for another rep's order an admin may only
-        # approve/reject, not edit.
+        # Only the order's own owner may confirm/push/edit/amend it. Admins are sales
+        # reps too, so they act on THEIR OWN orders like anyone else; there is no
+        # approval role over another rep's order.
         is_own_order=(order.salesperson_id == user.id),
         user=user,
     )
@@ -663,7 +679,9 @@ def admin_page(request: Request, db: Session = Depends(get_db)):
     ).order_by(models.User.name).all()
 
     return render("admin.html",
-        pending_orders=orders_summary_query(db, status=models.OrderStatus.submitted, order_asc=True),
+        # Reps push their own orders now (no approval step), so the landing tab is a
+        # read-only overview of recent orders across all statuses.
+        recent_orders=orders_summary_query(db, limit=50),
         stock_alerts=stock_alerts,
         salesperson_users=salesperson_users,
         role=user.role.value,
@@ -742,6 +760,7 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
                 models.OrderStatus.submitted,
                 models.OrderStatus.approved,
                 models.OrderStatus.pushed_to_sage,
+                models.OrderStatus.invoiced,
             ]),
         )
         .group_by(models.OrderLineItem.product_id)
@@ -798,6 +817,32 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
                 "unit": pr.unit.value if pr else "",
             })
 
+    # ── Stock-shortfall check (daily stock sync may show less than we've handed out) ──
+    # committed = what reps could still order = Σ remaining individual allocations +
+    # the shared pool's available qty. If physical stock is below that, warn admin to
+    # rebalance (we do NOT hard-block orders — this is an alert only).
+    committed_by_product: dict[int, int] = {}
+    for a in alloc_rows:
+        if a.allocated_qty > 0:
+            committed_by_product[a.product_id] = committed_by_product.get(a.product_id, 0) + max(0, a.remaining_qty)
+    for pid, pool in fcfs_pools.items():
+        if pool.available_qty > 0:
+            committed_by_product[pid] = committed_by_product.get(pid, 0) + pool.available_qty
+
+    oversold_products = []
+    for p in products:
+        committed = committed_by_product.get(p.id, 0)
+        physical  = product_stock.get(p.id, {}).get("total", 0)
+        if committed > 0 and physical < committed:
+            oversold_products.append({
+                "product_name": p.description,
+                "unit":         p.unit.value,
+                "stock":        physical,
+                "committed":    committed,
+                "shortfall":    committed - physical,
+            })
+    oversold_products.sort(key=lambda x: x["shortfall"], reverse=True)
+
     # Per-salesperson weekly presets, keyed for quick template lookup.
     preset_map = {
         (r.product_id, 'user', r.user_id): r.weekly_qty
@@ -823,6 +868,7 @@ def admin_tab_allocations(request: Request, db: Session = Depends(get_db)):
         schedule=schedule,
         attention_map=attention_map,
         attention_products=attention_products,
+        oversold_products=oversold_products,
     ))
 
 
@@ -838,7 +884,8 @@ def admin_reports_data(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"error": "forbidden"}, status_code=403)
 
     from sqlalchemy import func as _func
-    completed = (models.OrderStatus.approved, models.OrderStatus.pushed_to_sage)
+    completed = (models.OrderStatus.approved, models.OrderStatus.pushed_to_sage,
+                 models.OrderStatus.invoiced)
 
     sp_rows = (
         db.query(

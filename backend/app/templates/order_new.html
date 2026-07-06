@@ -20,7 +20,7 @@
   <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
   </svg>
-  Editing Order #SC{{ '%06d' | format(edit_order_id) }} — make your changes and press Submit to resend to admin.
+  Editing Order #SC{{ '%06d' | format(edit_order_id) }} — make your changes and press Confirm Order to save and reserve stock.
 </div>
 {% endif %}
 
@@ -247,7 +247,7 @@
         Save Draft</button>
       <button onclick="submitOrder()"
               class="flex-1 bg-brand text-white font-semibold py-2 rounded-xl hover:bg-brand-dark transition text-sm">
-        Submit</button>
+        Confirm Order</button>
     </div>
   </div>
 </div>
@@ -886,7 +886,7 @@ async function buildOrder(submit) {
   const transportVal    = document.getElementById('transport').value.trim();
   const customerPoVal   = document.getElementById('customer-po').value.trim();
   if (submit && !deliveryDateVal) {
-    showToast('Please set a delivery date before submitting.');
+    showToast('Please set a delivery date before confirming.');
     document.getElementById('delivery-date').focus();
     return;
   }
@@ -929,10 +929,10 @@ async function buildOrder(submit) {
     if (!r2.ok) { showToast((await r2.json()).detail || 'Could not add line.'); return; }
   }
 
-  // Submit if requested
+  // Confirm (reserve stock) if requested
   if (submit) {
     const r3 = await fetch(`/orders/${orderId}/submit`, { method: 'POST' });
-    if (!r3.ok) { showToast((await r3.json()).detail || 'Could not submit order.'); return; }
+    if (!r3.ok) { showToast((await r3.json()).detail || 'Could not confirm order.'); return; }
   }
 
   window.location.href = `/app/orders/${orderId}`;

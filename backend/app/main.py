@@ -53,6 +53,16 @@ app.include_router(notifications.router)
 app.include_router(pages.router)
 
 
+@app.on_event("startup")
+async def _start_scheduler():
+    """Start the best-effort in-app scheduler: it catches up the daily stock sync on
+    boot and re-checks hourly, plus runs the weekly allocation reset on its reset day.
+    See app/scheduler.py. Runs only while the server is up."""
+    import asyncio
+    from .scheduler import daily_loop
+    asyncio.create_task(daily_loop())
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "phase": "Phase 2 -- core app (no Sage yet)"}

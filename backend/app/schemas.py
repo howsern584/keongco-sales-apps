@@ -128,6 +128,9 @@ class OrderOut(BaseModel):
     customer_po: Optional[str] = None
     approved_by: Optional[int] = None
     approved_at: Optional[datetime] = None
+    pushed_at: Optional[datetime] = None
+    invoiced_at: Optional[datetime] = None
+    needs_resync: bool = False
     sage_order_ref: Optional[str] = None
     sage_invoice_no: Optional[str] = None
     reject_note: Optional[str] = None

@@ -57,6 +57,30 @@ browser. FastAPI builds an interactive page listing every endpoint — you can
 search customers, browse products, create an order, add lines, and submit it,
 all by filling in forms and clicking "Execute". Great for testing by hand.
 
+## Daily stock sync
+
+The app syncs warehouse stock from the Sage 300 stock report (an Excel export).
+
+- **Where the file lives:** by default the path in `app/import_stock.py` is used. For daily
+  automation, set a **fixed** path via the `STOCK_REPORT_PATH` env var (in `.env`) and export
+  the latest report to that same path each day.
+- **Automatic:** while the server is running it syncs once a day on its own (and catches up on
+  startup if it missed a day). See `app/scheduler.py`.
+- **Manual:** admins can click **"Sync Stock Now"** in the Allocation tab, or run:
+  ```powershell
+  python -m app.import_stock
+  ```
+- **Always-on option (Windows Task Scheduler):** on a machine that's always on, schedule the
+  command above to run daily. Create a Basic Task → Daily → *Start a program*:
+  - Program: `<path>\backend\.venv\Scripts\python.exe`
+  - Arguments: `-m app.import_stock`
+  - Start in: `<path>\backend`
+- The sync is **idempotent** (safe to run repeatedly) and only refreshes physical stock +
+  adds new products; it never changes reps' weekly allocations.
+
+> **Phase 3:** replace the Excel read in `app/import_stock.py` (`_read_report`) with a direct
+> Sage 300 stock query — the rest of the sync stays the same.
+
 ## Database note
 
 Phase 1 & 2 use **SQLite** (a single local file, zero install).

@@ -15,15 +15,20 @@ Flag any violation:
   or the .NET SDK. Direct DB writes are forbidden.
 - **No fabricated** API endpoints, table names, field names, or capabilities. If
   something looks invented or unverified, flag it as a blocker.
-- **Orders must pass through staging/approval:** `draft → submitted → approved →
-  pushed-to-sage`. Flag any path that could reach Sage without human approval.
-- **No auto-post / auto-push.** Pushing to Sage is always a human click.
+- **Orders must be CONFIRMED before Sage:** the flow is
+  `draft → confirmed (submitted) → pushed-to-sage`, with amend = reopen → edit →
+  re-confirm → re-push. A raw draft must never reach Sage. (There is NO admin
+  approval step — the salesperson confirms and pushes their own order.)
+- **No auto-push.** Pushing to Sage is always a deliberate human click by the order's
+  owner; amending an already-pushed order requires an explicit re-push to re-sync.
 - **Customer data stays in-house** — nothing routed through external third-party
   services without the user's explicit say-so.
 - **Sage references stored:** anything mapping to Sage keeps its code
   (`sage_customer_code`, `sage_item_code`, `sage_order_ref`, `sage_invoice_no`),
   not just an internal id.
-- **Roles:** a salesperson must NOT be able to approve or push to Sage.
+- **Roles / ownership:** a salesperson acts only on their OWN orders (confirm, push,
+  amend, re-push). No one confirms or pushes another rep's order on their behalf.
+  Admins are reps too and get no approval power over another rep's order.
 
 ## 2. Cleanliness — for the incoming ERP-integration engineer
 - Dead / unreachable code, unused imports, leftover debug `print()`s.

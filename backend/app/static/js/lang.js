@@ -48,9 +48,9 @@ const LANG = {
     customer_label:    "Customer",
     salesperson_label: "Salesperson",
     status_label:      "Status",
-    reject_note_label: "Rejection Note",
+    reject_note_label: "Cancellation Note",
     // Admin
-    admin_pending:     "Pending Orders",
+    admin_pending:     "Admin",
     admin_all:         "All Orders",
     approve_btn:       "Approve",
     reject_btn:        "Reject",
@@ -115,9 +115,9 @@ const LANG = {
     customer_label:    "客户",
     salesperson_label: "业务员",
     status_label:      "状态",
-    reject_note_label: "拒绝原因",
+    reject_note_label: "取消原因",
     // Admin
-    admin_pending:     "待审订单",
+    admin_pending:     "管理",
     admin_all:         "所有订单",
     approve_btn:       "批准",
     reject_btn:        "拒绝",
