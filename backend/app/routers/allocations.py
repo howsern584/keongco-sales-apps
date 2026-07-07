@@ -120,6 +120,7 @@ def set_fcfs_pool(payload: schemas.FcfsPoolSet, db: Session = Depends(get_db)):
     pool.total_qty = payload.total_qty
     pool.reserved_qty = 0          # fresh allocation -- reset the counter
     pool.available_qty = payload.total_qty
+    pool.manual = True             # admin set this by hand -> protected from the weekly reset
 
     # Mutual exclusion: pool allocation zeros all individual allocations for this product.
     db.query(models.Allocation).filter(
@@ -498,10 +499,19 @@ def auto_calculate_presets(db: Session = Depends(get_db)):
     for row in sales_rows:
         sales_by_product.setdefault(row.product_id, {})[row.salesperson_id] = int(row.qty)
 
+    # Products whose shared pool the admin set BY HAND -- leave these completely alone.
+    manual_pool_pids = {
+        r.product_id for r in
+        db.query(models.FcfsPool.product_id).filter(models.FcfsPool.manual.is_(True)).all()
+    }
+
     products_touched = 0
     presets_set = 0
 
     for product in products:
+        # Never re-plan a manually-set shared pool.
+        if product.id in manual_pool_pids:
+            continue
         total_stock = stock_map.get(product.id, 0)
         if total_stock == 0:
             continue
@@ -642,6 +652,12 @@ def apply_presets(db: Session = Depends(get_db)):
         .all()
     )
 
+    # Products with an admin-set shared pool are protected -- never convert or zero them.
+    manual_pool_pids = {
+        r.product_id for r in
+        db.query(models.FcfsPool.product_id).filter(models.FcfsPool.manual.is_(True)).all()
+    }
+
     products_touched: set[int] = set()
     allocations_set = 0
     skipped_low_stock = 0
@@ -671,6 +687,9 @@ def apply_presets(db: Session = Depends(get_db)):
     for preset in preset_rows:
         product = products.get(preset.product_id)
         if product is None:
+            continue
+        # Leave manually-set shared pools completely alone.
+        if preset.product_id in manual_pool_pids:
             continue
         # Skip products with too little stock (in MT) to auto-allocate.
         smt = _stock_mt(product, stock_units.get(preset.product_id, 0) or 0)

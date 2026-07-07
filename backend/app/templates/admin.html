@@ -72,6 +72,9 @@
 
 <!-- ── Allocations tab ── -->
 <div id="pane-allocations" class="hidden">
+  <!-- Toast for allocation actions (lives OUTSIDE alloc-tab-content so a tab refresh
+       doesn't wipe it). showAllocMsg() writes here. -->
+  <p id="alloc-msg" class="hidden mb-2"></p>
   <div id="alloc-tab-loading" class="py-16 text-center text-gray-400 text-sm">Loading allocations…</div>
   <div id="alloc-tab-content" class="hidden"><!-- injected by loadAllocations() --></div>
 </div>
@@ -477,6 +480,22 @@ function clearPoolUI(productId) {
   if (poolBar) { poolBar.innerHTML = ''; poolBar.classList.add('hidden'); }
 }
 
+// Re-fetch and re-inject the Allocation tab fragment so it reflects the latest
+// server state (pool bar, chips, allocations) WITHOUT a full page reload — that
+// way you stay on the Allocation tab and keep your scroll position.
+async function refreshAllocPane() {
+  const content = document.getElementById('alloc-tab-content');
+  if (!content) return;
+  const scrollY = window.scrollY;
+  const r = await fetch(`/admin/tab/allocations?_=${Date.now()}`, { cache: 'no-store' });
+  if (!r.ok) return;
+  content.innerHTML = await r.text();
+  content.classList.remove('hidden');
+  const loading = document.getElementById('alloc-tab-loading');
+  if (loading) loading.classList.add('hidden');
+  window.scrollTo(0, scrollY);
+}
+
 function showTab(name) {
   ['orders','allocations','prices','reports','customers','users','alerts'].forEach(t => {
     const pane = document.getElementById(`pane-${t}`);
@@ -780,7 +799,7 @@ async function removeAlloc(allocId, spName, productName) {
   const r = await fetch(`/admin/allocations/${allocId}`, { method: 'DELETE' });
   if (r.ok) {
     showAllocMsg('Allocation removed.', true);
-    setTimeout(() => location.reload(), 700);
+    await refreshAllocPane();
   } else {
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed to remove.', false);
@@ -792,11 +811,7 @@ async function clearAlloc(productId, productName) {
   const r = await fetch(`/admin/products/${productId}/clear-allocations`, { method: 'POST' });
   if (r.ok) {
     showAllocMsg(`✓ All allocations cleared for "${productName}".`, true);
-    // Zero every row for this product in place — no reload, keeps your scroll spot.
-    document.querySelectorAll(`.alloc-inline-input[data-product-id="${productId}"]`)
-      .forEach(inp => updateAllocRow(inp, 0, 0));
-    clearPoolUI(productId);
-    refreshAllocHeader(productId);
+    await refreshAllocPane();
   } else {
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed to clear allocations.', false);
@@ -808,7 +823,7 @@ async function clearPool(productId, productName) {
   const r = await fetch(`/admin/fcfs-pools/${productId}/zero`, { method: 'POST' });
   if (r.ok) {
     showAllocMsg('Pool cleared to 0.', true);
-    setTimeout(() => location.reload(), 800);
+    await refreshAllocPane();
   } else {
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed to clear pool.', false);
@@ -826,7 +841,7 @@ async function saveInlinePool(productId) {
   });
   if (r.ok) {
     showAllocMsg(`✓ Pool set to ${qty}`, true);
-    setTimeout(() => location.reload(), 700);
+    await refreshAllocPane();   // re-render the tab so the purple bar shows immediately
   } else {
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed to set pool.', false);
@@ -849,11 +864,7 @@ async function resetAllAlloc(productId, productName) {
     const data = await r.json();
     showAllocMsg(`✓ Reset ${data.updated} users to ${qty} ${data.qty === 1 ? 'unit' : 'units'} each.`, true);
     localStorage.setItem(`reset-qty-${productId}`, qty);
-    // Update every row for this product in place — no reload, keeps your scroll spot.
-    document.querySelectorAll(`.alloc-inline-input[data-product-id="${productId}"]`)
-      .forEach(inp => updateAllocRow(inp, qty, qty));
-    clearPoolUI(productId);          // reset-all also zeros the pool server-side
-    refreshAllocHeader(productId);
+    await refreshAllocPane();
   } else {
     const err = await r.json();
     showAllocMsg(err.detail || 'Failed to reset allocations.', false);
@@ -874,9 +885,11 @@ async function savePreset(productId, userId) {
 
 function showAllocMsg(text, success) {
   const el = document.getElementById('alloc-msg');
+  if (!el) return;   // never let a missing toast element break the calling action
   el.textContent = text;
   el.className = `text-sm text-center rounded-lg py-2 ${success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`;
   el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 2500);
 }
 
 // ── Preset Schedule ───────────────────────────────────────────────────────────

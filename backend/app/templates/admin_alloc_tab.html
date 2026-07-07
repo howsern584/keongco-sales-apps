@@ -227,9 +227,10 @@
     {% if stk and stk.total > 0 %}<span class="text-xs font-bold px-1.5 py-0 rounded bg-blue-50 text-blue-700 shrink-0 ml-1">{{ stk.total }} {{ stk.unit }}</span>
     {% else %}<span class="text-xs text-gray-300 shrink-0 ml-1">no stock</span>{% endif %}
     <div id="alloc-chips-{{ p.id }}" class="flex items-center gap-0.5 shrink-0">
-      {% if ns_a.set_count == 0 %}<span class="text-xs text-gray-400 italic">—</span>
-      {% elif pool and pool.total_qty > 0 %}
+      {% if pool and pool.total_qty > 0 %}
       <span class="text-xs px-1 py-0 rounded font-medium {% if pool.available_qty == 0 %}bg-red-100 text-red-600{% else %}bg-purple-50 text-purple-700{% endif %}">P:{{ pool.available_qty }}</span>
+      {% if pool.manual %}<span class="text-xs" title="Manual pool — protected from the weekly reset">🔒</span>{% endif %}
+      {% elif ns_a.set_count == 0 %}<span class="text-xs text-gray-400 italic">—</span>
       {% else %}
       {% set ns_chip = namespace(shown=0) %}
       {% for sp in salespeople %}{% set alloc = alloc_map.get((sp.id, p.id)) %}{% if alloc and alloc.allocated_qty > 0 and ns_chip.shown < 3 %}{% set ns_chip.shown = ns_chip.shown + 1 %}

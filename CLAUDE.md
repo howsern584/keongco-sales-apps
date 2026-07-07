@@ -152,6 +152,8 @@ Do not start Phase 3 until I have confirmed my Sage version and API access.
   zeroes the pool.
 - **Stock shortfall** (synced stock < what's still allocated) shows an admin warning in the
   Allocation tab — it does **not** hard-block orders.
+- **Manual shared pools are protected:** a pool the admin sets by hand (`FcfsPool.manual`) is
+  never wiped, resized or converted by the weekly reset or the new-product auto-fallback.
 
 ---
 

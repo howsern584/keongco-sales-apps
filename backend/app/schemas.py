@@ -178,6 +178,7 @@ class FcfsPoolOut(BaseModel):
     total_qty: int
     reserved_qty: int
     available_qty: int
+    manual: bool = False
 
     class Config:
         from_attributes = True

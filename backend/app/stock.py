@@ -177,11 +177,15 @@ def set_new_product_pool(db: Session, product, stock_units: int, pool_pct: int) 
         .filter(models.FcfsPool.product_id == product.id)
         .first()
     )
+    # Never touch a manually-set pool -- the admin owns that number.
+    if pool is not None and pool.manual:
+        return pool.total_qty
     if pool is None:
         pool = models.FcfsPool(product_id=product.id, reserved_qty=0)
         db.add(pool)
     pool.total_qty = total
     pool.available_qty = max(0, total - (pool.reserved_qty or 0))
+    pool.manual = False
     product.allocation_mode = models.AllocationMode.fcfs
     db.query(models.Allocation).filter(
         models.Allocation.product_id == product.id

@@ -123,8 +123,14 @@ def _bulk_prev_prices(db):
 
 
 def render(name: str, **ctx) -> HTMLResponse:
-    """Render a Jinja2 template and return an HTMLResponse."""
-    return HTMLResponse(_env.get_template(name).render(**ctx))
+    """Render a Jinja2 template and return an HTMLResponse.
+
+    no-store so browsers never serve a stale page (the pages carry inline JS, and a
+    cached copy would keep running old scripts even after the user refreshes)."""
+    return HTMLResponse(
+        _env.get_template(name).render(**ctx),
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 # ---------- Helpers ----------------------------------------------------------

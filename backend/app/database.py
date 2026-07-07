@@ -74,6 +74,8 @@ _ADDED_COLUMNS = [
     # New-product shared-pool sizing + daily stock-sync bookkeeping.
     ("allocation_settings", "new_product_pool_pct", "INTEGER NOT NULL DEFAULT 70"),
     ("allocation_settings", "last_stock_sync_at",   "DATETIME"),
+    # Manually-set shared pools are protected from the weekly reset.
+    ("fcfs_pool",           "manual",               "BOOLEAN NOT NULL DEFAULT 0"),
 ]
 # New TABLES (customer_prices, price_change_events) are created by create_all().
 

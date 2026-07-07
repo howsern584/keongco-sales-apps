@@ -232,6 +232,9 @@ class FcfsPool(Base):
     total_qty = Column(Integer, default=0, nullable=False)
     reserved_qty = Column(Integer, default=0, nullable=False)
     available_qty = Column(Integer, default=0, nullable=False)
+    # True = admin set this pool by hand (the "shared pool" control). The weekly preset
+    # reset and the new-product auto-fallback must NEVER wipe or resize a manual pool.
+    manual = Column(Boolean, default=False, nullable=False)
 
 
 class Order(Base):
