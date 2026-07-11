@@ -1,4 +1,4 @@
-# Keongco Sales Order-Entry App
+# Sales Order-Entry App
 
 A mobile-friendly order-entry app for Keongco's sales team, built to remove the
 double data-entry between salespeople and the Sage 300 (Accpac) ERP.
