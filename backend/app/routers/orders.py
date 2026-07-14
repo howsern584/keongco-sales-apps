@@ -100,12 +100,11 @@ def add_line(order_id: int, line: schemas.LineItemCreate, db: Session = Depends(
         if lot is None or lot.product_id != product.id:
             raise HTTPException(status_code=400, detail="Lot does not match the product")
 
-    # Check stock: this line plus any earlier lines for the same product in this
-    # order must fit within the salesperson's balance (or the FCFS pool).
-    already_in_order = sum(
-        li.quantity for li in order.line_items if li.product_id == product.id
-    )
-    requested = already_in_order + line.quantity
+    # Check stock: drafts count against the rep's allocation. Sum THIS product across
+    # ALL of the rep's open drafts (this order included) plus the new line, and require
+    # it to fit within their available balance (individual allocation + shared pool).
+    draft_demand = stock.draft_held_for(db, order.salesperson_id, product.id)
+    requested = draft_demand + line.quantity
     available = stock.available_for(db, order.salesperson_id, product)
     if requested > available:
         stock.raise_alert(db, order.salesperson_id, product.id)
@@ -114,8 +113,8 @@ def add_line(order_id: int, line: schemas.LineItemCreate, db: Session = Depends(
             status_code=400,
             detail=(
                 f"Stock limit reached for '{product.description}'. "
-                f"You can order up to {available} {product.unit.value} "
-                f"(you already have {already_in_order} in this order). "
+                f"You can order up to {available} {product.unit.value} across your drafts "
+                f"(your drafts already use {draft_demand}). "
                 f"Admin has been alerted to allocate more."
             ),
         )
@@ -205,7 +204,8 @@ def reopen_order(order_id: int, request: Request, db: Session = Depends(get_db))
       - rejected (Cancelled):    stock was already returned when it was cancelled.
       - draft:                   already editable, returned unchanged.
 
-    Own orders only: only the order's own salesperson may reopen/amend it.
+    The order's own salesperson may amend it. Invoicing/admin may ALSO amend any order
+    on the rep's behalf (the order stays owned by the rep); we record who amended it.
     """
     order = db.query(models.Order).get(order_id)
     if order is None:
@@ -214,9 +214,15 @@ def reopen_order(order_id: int, request: Request, db: Session = Depends(get_db))
     user = get_current_user(request, db)
     if user is None:
         raise HTTPException(status_code=401, detail="Login required.")
-    if order.salesperson_id != user.id:
+    is_admin = user.role == models.UserRole.admin
+    if order.salesperson_id != user.id and not is_admin:
         raise HTTPException(status_code=403,
                             detail="You can only edit your own orders.")
+
+    # Audit: when invoicing/admin amends someone else's order, stamp who + when.
+    if order.salesperson_id != user.id:
+        order.amended_by = user.id
+        order.amended_at = datetime.utcnow()
 
     if order.status == models.OrderStatus.draft:
         return order   # already editable
@@ -253,14 +259,47 @@ def clear_lines(order_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{order_id}")
-def delete_order(order_id: int, db: Session = Depends(get_db)):
-    """Delete a draft order and all its line items. Only drafts can be deleted."""
+def delete_order(order_id: int, request: Request, db: Session = Depends(get_db)):
+    """Delete a draft order and all its line items. Only drafts can be deleted.
+
+    If this draft was PUSHED to Sage before being reopened (``pushed_at`` is set, which
+    survives the reopen-to-draft step), Sage 300 still holds a copy under our SC
+    reference. Deleting only locally would leave that Sage order orphaned, so we FIRST
+    tell Sage to cancel it and delete locally ONLY if that succeeds -- otherwise the app
+    and Sage would silently disagree. Cancelling in Sage is a deliberate human action
+    (the owner clicked Delete), not an auto-push.
+    """
     order = db.query(models.Order).get(order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    # Deleting now writes to Sage, so gate it like reopen/push: owner or admin only.
+    user = get_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Login required.")
+    if order.salesperson_id != user.id and user.role != models.UserRole.admin:
+        raise HTTPException(status_code=403, detail="You can only delete your own orders.")
+
     if order.status != models.OrderStatus.draft:
         raise HTTPException(status_code=400, detail="Only draft orders can be deleted")
-    # Delete line items first (foreign key), then the order
+
+    # Was this order ever pushed to Sage? If so, cancel it there BEFORE deleting locally.
+    if order.pushed_at is not None:
+        sc_ref = f"SC{order.id:06d}"
+        # --- PHASE 3 TODO: replace this mock with the real Sage 300 SDK cancel ---
+        # Look up the Sage OE order by our SC reference and CANCEL/DELETE it. If Sage
+        # refuses (e.g. it has already been shipped or invoiced and can no longer be
+        # cancelled), RAISE an HTTPException here so we do NOT delete locally -- the
+        # app must never lose its record while a live order still sits in Sage.
+        print(f"=== [MOCK] Cancel in Sage 300 -- DELETE order {sc_ref} ===")
+        print(f"  Salesperson:  {order.salesperson_id}")
+        print(f"  Sage OE ref:  {order.sage_order_ref or '(not synced back)'}")
+        print(f"  Phase 3 will call the Sage SDK to cancel this OE order, keyed on the")
+        print(f"  SC reference, and abort the delete if Sage will not cancel it.")
+        print(f"=== [MOCK] end ===")
+        # --- end placeholder ---
+
+    # Delete line items first (foreign key), then the order.
     for line in order.line_items:
         db.delete(line)
     db.delete(order)
@@ -333,6 +372,7 @@ def update_sage_refs(order_id: int, payload: schemas.SageRefsUpdate,
 def push_to_sage(order_id: int, request: Request, db: Session = Depends(get_db)):
     """
     The salesperson pushes their OWN confirmed order to Sage 300. No admin approval.
+    Invoicing/admin may also push any order (e.g. after amending it for a busy rep).
 
     PLACEHOLDER (Phase 2): pretends to push to Sage and logs what it would send.
     In Phase 3 this becomes the real Sage 300 .NET SDK write path.
@@ -348,7 +388,7 @@ def push_to_sage(order_id: int, request: Request, db: Session = Depends(get_db))
     user = get_current_user(request, db)
     if user is None:
         raise HTTPException(status_code=401, detail="Login required.")
-    if order.salesperson_id != user.id:
+    if order.salesperson_id != user.id and user.role != models.UserRole.admin:
         raise HTTPException(status_code=403, detail="You can only push your own orders.")
 
     # A confirmed order is ready to push. 'approved' is accepted for legacy rows.

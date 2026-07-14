@@ -263,6 +263,10 @@ class Order(Base):
     approved_at = Column(DateTime, nullable=True)          # legacy approval timestamp (kept for old rows)
     pushed_at   = Column(DateTime, nullable=True)          # when the salesperson pushed it to Sage
     invoiced_at = Column(DateTime, nullable=True)          # when invoicing converted the OE to an invoice (order then LOCKED)
+    # When invoicing/admin amends an order ON BEHALF of the rep, we record who did it
+    # (the order still belongs to the rep). NULL = never amended by someone else.
+    amended_by  = Column(Integer, ForeignKey("users.id"), nullable=True)
+    amended_at  = Column(DateTime, nullable=True)
     # True after a pushed order is amended: Sage still holds the OLD copy, so the
     # salesperson must push again to re-sync. Cleared on (re-)push.
     needs_resync = Column(Boolean, default=False, nullable=False)

@@ -284,17 +284,16 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
         .all()
     )
 
-    # ── Edit mode: preload an existing DRAFT order the current user OWNS ──
-    # Own orders only — a salesperson (incl. an admin acting as a rep) may edit
-    # only their own order. No one may edit another rep's order; enforced here
-    # server-side, not just by hiding the button.
+    # ── Edit mode: preload an existing DRAFT order ──
+    # The order's owner may edit it; invoicing/admin may edit any order on the rep's
+    # behalf. Enforced here server-side, not just by hiding the button.
     edit_order = None
     edit_lines = {}          # product_id -> {qty, price, lot_id, lot_note}
     edit_customer = None
     if edit:
         _o = db.query(models.Order).get(edit)
         if (_o and _o.status == models.OrderStatus.draft
-                and _o.salesperson_id == user.id):
+                and (_o.salesperson_id == user.id or user.role == models.UserRole.admin)):
             edit_order = _o
             edit_customer = db.query(models.Customer).get(_o.customer_id)
             for li in _o.line_items:
@@ -309,6 +308,20 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
         models.Allocation.salesperson_id == user.id
     ).all()
     allocations = {a.product_id: a for a in alloc_rows}
+
+    # Drafts count against the rep's allocation: how much of each product this rep
+    # already holds in OTHER open drafts (exclude the order being edited, if any).
+    draft_rows = (
+        db.query(models.OrderLineItem.product_id,
+                 _func2.coalesce(_func2.sum(models.OrderLineItem.quantity), 0))
+        .join(models.Order, models.Order.id == models.OrderLineItem.order_id)
+        .filter(models.Order.salesperson_id == user.id,
+                models.Order.status == models.OrderStatus.draft,
+                models.Order.id != (edit or -1))
+        .group_by(models.OrderLineItem.product_id)
+        .all()
+    )
+    draft_held = {pid: int(q or 0) for pid, q in draft_rows}
 
     # Bulk loads — one query each instead of N per product
     pid_list = [p.id for p in products]
@@ -341,6 +354,7 @@ def new_order_page(request: Request, edit: int | None = None, db: Session = Depe
         user=user,
         products=products,
         allocations=allocations,
+        draft_held=draft_held,
         fcfs_pools=fcfs_pools,
         lots=lots_map,
         prev_price_map=prev_price_map,
@@ -398,6 +412,10 @@ def order_detail_page(order_id: int, request: Request, db: Session = Depends(get
             "override_reason":li.override_reason,
         })
 
+    # Who amended this order on the rep's behalf, if anyone (for the audit note).
+    amender = db.query(models.User).get(order.amended_by) if order.amended_by else None
+
+    is_own_order = (order.salesperson_id == user.id)
     return render("order_detail.html",
         order=order,
         customer_name=customer.name if customer else "--",
@@ -406,10 +424,11 @@ def order_detail_page(order_id: int, request: Request, db: Session = Depends(get
         lines=lines,
         total=total,
         role=user.role.value,
-        # Only the order's own owner may confirm/push/edit/amend it. Admins are sales
-        # reps too, so they act on THEIR OWN orders like anyone else; there is no
-        # approval role over another rep's order.
-        is_own_order=(order.salesperson_id == user.id),
+        is_own_order=is_own_order,
+        # The owner may confirm/push/edit/amend their order; invoicing/admin may also
+        # amend any order on the rep's behalf (audit-tracked via amended_by).
+        can_amend=(is_own_order or user.role == models.UserRole.admin),
+        amended_by_name=(amender.name if amender else None),
         user=user,
     )
 

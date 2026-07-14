@@ -26,9 +26,11 @@ Flag any violation:
 - **Sage references stored:** anything mapping to Sage keeps its code
   (`sage_customer_code`, `sage_item_code`, `sage_order_ref`, `sage_invoice_no`),
   not just an internal id.
-- **Roles / ownership:** a salesperson acts only on their OWN orders (confirm, push,
-  amend, re-push). No one confirms or pushes another rep's order on their behalf.
-  Admins are reps too and get no approval power over another rep's order.
+- **Roles / ownership:** a salesperson confirms and pushes their OWN orders (there is no
+  approval step). Invoicing/admin may **amend any order on a rep's behalf** (reopen → edit →
+  re-push) and **mark an order invoiced** (which locks it) — the order stays owned by the rep
+  and the amendment is audit-tracked (`amended_by`/`amended_at`). Flag anything that lets a
+  plain salesperson act on *another* rep's order, or that changes an order's owner.
 
 ## 2. Cleanliness — for the incoming ERP-integration engineer
 - Dead / unreachable code, unused imports, leftover debug `print()`s.

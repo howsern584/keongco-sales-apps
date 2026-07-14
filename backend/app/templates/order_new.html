@@ -91,7 +91,8 @@
         {% for p in ns3.items %}
         {% set s_alloc = allocations.get(p.id) %}
         {% set s_pool  = fcfs_pools.get(p.id) %}
-        {% set s_alloc_rem  = s_alloc.remaining_qty if (s_alloc and s_alloc.allocated_qty > 0) else 0 %}
+        {# remaining allocation MINUS what this rep already holds in other drafts #}
+        {% set s_alloc_rem  = ([0, s_alloc.remaining_qty - draft_held.get(p.id, 0)] | max) if (s_alloc and s_alloc.allocated_qty > 0) else 0 %}
         {% set s_pool_avail = s_pool.available_qty  if (s_pool  and s_pool.total_qty  > 0) else 0 %}
         {% set s_avail = s_alloc_rem + s_pool_avail %}
         {% set s_out = (s_avail == 0) %}
@@ -141,7 +142,7 @@
           <div id="simple-detail-{{ p.id }}" class="hidden px-3 pb-2 bg-gray-50 border-t border-gray-100">
             <div class="flex flex-wrap gap-1 pt-2 mb-1.5">
               {% if s_avail > 0 %}<span class="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full font-medium">✓ {{ s_avail }} avail</span>{% endif %}
-              {% if s_alloc and s_alloc.allocated_qty > 0 %}<span class="text-xs {% if s_alloc.remaining_qty == 0 %}bg-red-50 text-red-600{% elif (s_alloc.remaining_qty / s_alloc.allocated_qty) < 0.2 %}bg-amber-50 text-amber-700{% else %}bg-blue-50 text-blue-700{% endif %} px-1.5 py-0.5 rounded-full">My alloc: {{ s_alloc.remaining_qty }}/{{ s_alloc.allocated_qty }}</span>{% endif %}
+              {% if s_alloc and s_alloc.allocated_qty > 0 %}<span class="text-xs {% if s_alloc_rem == 0 %}bg-red-50 text-red-600{% elif (s_alloc_rem / s_alloc.allocated_qty) < 0.2 %}bg-amber-50 text-amber-700{% else %}bg-blue-50 text-blue-700{% endif %} px-1.5 py-0.5 rounded-full">My alloc: {{ s_alloc_rem }}/{{ s_alloc.allocated_qty }}</span>{% endif %}
               {% if s_pool and s_pool.total_qty > 0 %}<span class="text-xs {% if s_pool.available_qty == 0 %}bg-red-50 text-red-600{% else %}bg-purple-50 text-purple-700{% endif %} px-1.5 py-0.5 rounded-full">Pool: {{ s_pool.available_qty }}/{{ s_pool.total_qty }}</span>{% endif %}
               {% if s_out %}<span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full italic">{% if not (s_alloc and s_alloc.allocated_qty > 0) and not (s_pool and s_pool.total_qty > 0) %}No allocation — contact admin{% else %}Out of stock{% endif %}</span>{% endif %}
               {% set prev = prev_price_map.get(p.id) %}

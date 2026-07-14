@@ -76,6 +76,9 @@ _ADDED_COLUMNS = [
     ("allocation_settings", "last_stock_sync_at",   "DATETIME"),
     # Manually-set shared pools are protected from the weekly reset.
     ("fcfs_pool",           "manual",               "BOOLEAN NOT NULL DEFAULT 0"),
+    # Audit trail for invoicing amending an order on a rep's behalf.
+    ("orders",              "amended_by",           "INTEGER"),
+    ("orders",              "amended_at",           "DATETIME"),
 ]
 # New TABLES (customer_prices, price_change_events) are created by create_all().
 

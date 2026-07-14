@@ -9,13 +9,16 @@ Two kinds of limits:
   2. First-come-first-serve pool (mode: fcfs)
      -> one shared pool; whoever submits first reserves the stock.
 
-Quantities are counted against SUBMITTED orders. While an order is still a
-draft, we check the balance so the salesperson can't build something they
-can't submit, and raise an alert for admin if they hit the limit.
+Stock is formally DEDUCTED on Confirm (submit). But a rep's open DRAFTS also count
+against their allocation: `draft_held_for` sums a product across the rep's drafts, and
+`add_line` checks (draft demand + new line) against their available balance -- so a rep
+can't build drafts beyond their allocation. Draft quantities free up automatically when
+the draft is deleted or confirmed.
 """
 
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from . import models
@@ -43,6 +46,27 @@ def available_for(db: Session, salesperson_id: int, product: models.Product) -> 
         total += max(0, pool.available_qty)
 
     return total
+
+
+def draft_held_for(db: Session, salesperson_id: int, product_id: int,
+                   exclude_order_id: int | None = None) -> int:
+    """Total quantity of a product sitting in this salesperson's OPEN DRAFT orders.
+
+    Drafts count against the rep's allocation ("hold while drafting") even though stock
+    is only formally deducted on Confirm. Pass exclude_order_id to leave out the order
+    currently being edited (so its own lines aren't double-counted in a display)."""
+    q = (
+        db.query(func.coalesce(func.sum(models.OrderLineItem.quantity), 0))
+        .join(models.Order, models.Order.id == models.OrderLineItem.order_id)
+        .filter(
+            models.Order.salesperson_id == salesperson_id,
+            models.Order.status == models.OrderStatus.draft,
+            models.OrderLineItem.product_id == product_id,
+        )
+    )
+    if exclude_order_id is not None:
+        q = q.filter(models.Order.id != exclude_order_id)
+    return int(q.scalar() or 0)
 
 
 def raise_alert(db: Session, salesperson_id: int, product_id: int) -> None:

@@ -65,6 +65,12 @@
     <span class="font-medium">{{ order.approved_at | string | truncate(10, true, '') }}</span>
   </div>
   {% endif %}
+  {% if order.amended_by and amended_by_name %}
+  <div class="flex justify-between">
+    <span class="text-gray-500">Amended by</span>
+    <span class="font-medium text-amber-600">{{ amended_by_name }}{% if order.amended_at %} · {{ order.amended_at | string | truncate(10, true, '') }}{% endif %}</span>
+  </div>
+  {% endif %}
   {% if order.sage_order_ref or order.sage_invoice_no %}
   <div class="border-t border-gray-100 pt-2 mt-1 space-y-1.5">
     {% if order.sage_order_ref %}
@@ -193,15 +199,18 @@
   </div>
 </div>
 
-<!-- Amend an already-pushed order (owner only): reopen it to draft to edit, then re-push. -->
-{% if is_own_order and order.status == 'pushed_to_sage' %}
+<!-- Amend an already-pushed order: the owner, or invoicing/admin on the rep's behalf. -->
+{% if can_amend and order.status == 'pushed_to_sage' %}
 <button onclick="amendOrder()"
-        class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-3 flex items-center justify-center gap-2">
+        class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-1 flex items-center justify-center gap-2">
   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
   </svg>
   Amend Order
 </button>
+{% if not is_own_order %}
+<p class="text-xs text-gray-400 text-center mb-3">Amending on behalf of {{ salesperson_name }} (invoicing).</p>
+{% else %}<div class="mb-3"></div>{% endif %}
 {% endif %}
 
 <!-- Reorder button (for completed orders: approved/pushed/invoiced) -->
@@ -215,8 +224,8 @@
 </button>
 {% endif %}
 
-<!-- Confirm a draft (owner only): reserves stock and makes it ready to Push to Sage. -->
-{% if is_own_order and order.status == 'draft' and lines %}
+<!-- Confirm a draft (owner, or invoicing/admin): reserves stock, ready to Push to Sage. -->
+{% if can_amend and order.status == 'draft' and lines %}
 <button onclick="confirmOrder()"
         class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-3 flex items-center justify-center gap-2">
   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -227,10 +236,8 @@
 <p class="text-xs text-gray-400 text-center -mt-1 mb-3">Confirming reserves stock. You can then push it to Sage.</p>
 {% endif %}
 
-<!-- Edit an order and re-confirm — only the order's OWN owner may do this.
-     Admins are sales reps too, so they can edit their own orders; but no one may
-     edit another rep's order. -->
-{% if is_own_order and order.status in ('draft', 'submitted', 'rejected') %}
+<!-- Edit an order and re-confirm — the owner, or invoicing/admin on the rep's behalf. -->
+{% if can_amend and order.status in ('draft', 'submitted', 'rejected') %}
 <button onclick="editOrder()"
         class="w-full bg-brand text-white font-semibold py-3 rounded-xl hover:bg-brand-dark transition mb-3 flex items-center justify-center gap-2">
   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -248,9 +255,9 @@
 </button>
 {% endif %}
 
-<!-- Push to Sage — the salesperson pushes their OWN confirmed order (no admin approval).
-     Also covers legacy 'approved' orders and re-pushing an amended order. -->
-{% if is_own_order and order.status in ('submitted', 'approved') %}
+<!-- Push to Sage — the owner, or invoicing/admin re-pushing an order they amended.
+     Also covers legacy 'approved' orders. -->
+{% if can_amend and order.status in ('submitted', 'approved') %}
 <button onclick="pushToSage()"
         class="w-full bg-purple-600 text-white font-semibold py-3 rounded-xl hover:bg-purple-700 transition flex items-center justify-center gap-2">
   <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -365,9 +372,16 @@ async function amendOrder() {
   }
 }
 
+// True when this draft was already pushed to Sage before being reopened -- deleting it
+// will also cancel the matching order in Sage 300, so we warn more strongly.
+const WAS_PUSHED_TO_SAGE = {{ 'true' if order.pushed_at else 'false' }};
+
 async function deleteDraft() {
   if (_tapThrough()) return;
-  if (!confirm('Delete this draft order? This cannot be undone.')) return;
+  const msg = WAS_PUSHED_TO_SAGE
+    ? 'This order was already pushed to Sage. Deleting it will also CANCEL the matching order in Sage 300. This cannot be undone. Continue?'
+    : 'Delete this draft order? This cannot be undone.';
+  if (!confirm(msg)) return;
   const r = await fetch(`/orders/${ORDER_ID}`, { method: 'DELETE' });
   if (r.ok) {
     window.location.href = '/app/orders';

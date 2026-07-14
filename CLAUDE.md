@@ -92,10 +92,12 @@ The middleware layer must:
 
 - **Salesperson** — create/edit their own orders, confirm them, **push their own orders to
   Sage**, amend and re-push their own pushed orders, and view their own orders.
-- **Invoicing/Admin** — manage products, pricing, allocations, customers and users; view a
-  read-only overview of all orders and reports. Admins are also salespeople and act on
-  THEIR OWN orders exactly like any rep.
-- No one approves or pushes another rep's order on their behalf — each rep owns their own.
+- **Invoicing/Admin** — manage products, pricing, allocations, customers and users; view all
+  orders and reports; mark an order **Invoiced** (locks it); and **amend any order on a rep's
+  behalf** (e.g. when the rep is busy) — reopen, edit and re-push it. The order stays owned by
+  the rep; the app records who amended it (`amended_by` / `amended_at`).
+- There is no approval step — each rep confirms and pushes their OWN orders. The only thing an
+  admin does to *another* rep's order is amend-on-behalf (audit-tracked) or mark it invoiced.
 
 ---
 
@@ -152,6 +154,10 @@ Do not start Phase 3 until I have confirmed my Sage version and API access.
   zeroes the pool.
 - **Stock shortfall** (synced stock < what's still allocated) shows an admin warning in the
   Allocation tab — it does **not** hard-block orders.
+- **Drafts count against a rep's allocation:** a rep's open drafts are summed against their
+  available balance (`stock.draft_held_for`), so they can't build drafts beyond their limit.
+  This is a **live count** (frees when the draft is deleted/confirmed) — stock is still only
+  formally deducted from the ledger on **Confirm**.
 - **Manual shared pools are protected:** a pool the admin sets by hand (`FcfsPool.manual`) is
   never wiped, resized or converted by the weekly reset or the new-product auto-fallback.
 
